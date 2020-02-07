@@ -2,8 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """ Top-level connector class; implements the methods for parsing a connector 
-    definition YAML, instantiating the necessary plugin classes & any variables 
-    and executing the connector.
+    instance YAML, validating it, and deriving the dependency graph
 """
 
 import sys
