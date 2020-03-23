@@ -16,7 +16,7 @@ import itertools
 import random
 from functools import reduce
 
-from ..helper.GeoEDFError import GeoEDFError
+from GeoEDFError import GeoEDFError
 
 class GeoEDFProcessor:
 
