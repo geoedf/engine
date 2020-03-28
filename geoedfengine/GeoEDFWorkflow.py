@@ -14,43 +14,50 @@ import re
 import itertools
 import random
 from functools import reduce
+
+from Pegasus.DAX3 import *
 from Pegasus.jupyter.instance import *
 
-from ..helper.GeoEDFError import GeoEDFError
-from ..helper.WorkflowBuilder import WorkflowBuilder
+from .helper.GeoEDFError import GeoEDFError
+from .helper.WorkflowBuilder import WorkflowBuilder
 
 class GeoEDFWorkflow:
 
-    # can either provide a standalone YAML file of the workflow or 
-    # provide a dictionary encoding the workflow
-    # file takes precedence; ignore dict if both provided
+    # def_filename is a YAML file that encodes the workflow
     # target corresponds to the config entry in an execution config file
-    # possible values are 'local', 'geoedf-public', 'cluster#'
-    def __init__(self,def_filename=None,def_dict=None,target='local'):
+    # possible values are 'local', 'geoedf-public', 'cluster#', 'condorpool' (for testing)
+    def __init__(self,def_filename=None,target='condorpool'):
 
-        # validation (1) make sure at-least one of file or dict is provided
-        if def_filename is None and def_dict is None:
-            raise GeoEDFError('Error: a workflow input either as a YAML file or a dictionary must be provided!')
+        # validation (1) make sure workflow file has been provided
+        if def_filename is None:
+            raise GeoEDFError('Error: a workflow YAML file must be provided!')
 
         # create a GeoEDF workflow object from the input file
-        if def_filename is not None:  # file takes precedence
-            with open(def_filename,'r') as workflow_file:
-                self.workflow_dict = yaml.load(workflow_file)
-        else:
-            self.workflow_dict = def_dict
+        with open(def_filename,'r') as workflow_file:
+            self.workflow_dict = yaml.load(workflow_file)
 
         # syntactic and semantic validation (2) ....
 
         # after validation suceeds, create a builder for this workflow
-        builder = WorkflowBuilder(self.workflow_dict,target)
+        builder = WorkflowBuilder(def_filename,target)
 
         # build the concrete Pegasus workflow
-        self.dax = builder.build_pegasus_dax()
+        builder.build_pegasus_dax()
+
+        # get the dax
+        self.dax = builder.dax
+
+        # get a workflow instance to execute
+        self.instance = builder.get_workflow_instance()
+
+        # execution target
+        self.target = target
 
     # executes the Pegasus DAX constructed by the builder
     def execute(self):
+        self.instance.run(site=self.target)
+        self.status(loop=True)
 
-        # write DAX out to file and submit or use Jupyter API
 
 
         
