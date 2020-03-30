@@ -20,7 +20,7 @@ from .GeoEDFProcessor import GeoEDFProcessor
 from Pegasus.DAX3 import *
 from Pegasus.jupyter.instance import *
 
-class WorkflowBuilder
+class WorkflowBuilder:
 
     CONNECTOR = 1
     PROCESSOR = 2
@@ -29,17 +29,6 @@ class WorkflowBuilder
     # pass along anything that may be needed; for now, just the target execution environment
     # creates local workflow directory to hold subworkflow DAX XMLs
     # and merge result outputs
-
-    # executables that create connector and processor plugin subdax
-    # path to executable is determined by running "which"
-    # executables are "bin" scripts installed via engine package
-    build_conn_plugin_subdax = Executable(name="build_conn_plugin_subdax", arch="x86_64", installed=False)
-    conn_plugin_builder_path = WorkflowUtils.find_exec_path("build-conn-plugin-subdax")
-    build_conn_plugin_subdax.addPFN(PFN("file://%s" % conn_plugin_builder_path,"local"))
-    
-    #build_proc_plugin_subdax = Executable(name="build_proc_plugin_subdax", arch="x86_64", installed=False)
-    #proc_plugin_builder_path = WorkflowUtils.find_exec_path("build-proc-plugin-subdax")
-    #build_proc_plugin_subdax.addPFN(PFN("file://%s" % proc_plugin_builder_path,"local"))
 
     def __init__(self,workflow_filename,target='local'):
         with open(workflow_filename,'r') as workflow_file:
@@ -68,41 +57,48 @@ class WorkflowBuilder
         self.dax = ADAG("geoedf-%s" % self.workflow_id)
 
         # determine full path of new directory to hold intermediate results on target site
-        self.job_dir = self.helper.target_job_dir(self.workflow_id,self.target)
+        self.job_dir = self.helper.target_job_dir(self.target)
 
         # create a local run directory; this will be used to store subdax XMLs and intermediate
         # outputs
-        self.run_dir = self.helper.create_run_dir(self.workflow_id)
+        self.run_dir = self.helper.create_run_dir()
 
         # initialize the transformation catalog
         self.tc = TransformationCatalog(workflow_dir=self.run_dir)
 
         # add the connector container to the DAX-level TC
-        geoedf_container = Container("geoedf-connector",type="singularity",image="shub://geoedf/geoedf-connector:latest",mount=["%s:/data" % self.job_dir])
-        self.tc.add_container(conn_cont)
+        geoedf_container = Container("geoedf-connector",type="singularity",image="shub://rkalyanapurdue/geoedf-connector:latest",mount=["%s:/data" % self.job_dir])
+        self.tc.add_container(geoedf_container)
         
         # create and add executables
 
         conn_exec = Executable("run-workflow-stage",installed=True,container=geoedf_container)
-        conn_exec.addPFN(PFN("/usr/local/bin/run-workflow-stage.sh",target))
-        self.tc.addExecutable(conn_exec)
+        conn_exec.addPFN(PFN("/usr/local/bin/run-workflow-stage.sh",self.target))
+        self.tc.add(conn_exec)
 
         merge_exec = Executable("merge.py",installed=True,container=geoedf_container)
-        merge_exec.addPFN(PFN("/usr/local/bin/merge.py",target))
-        self.tc.addExecutable(merge_exec)
+        merge_exec.addPFN(PFN("/usr/local/bin/merge.py",self.target))
+        self.tc.add(merge_exec)
 
         collect_exec = Executable("collect.py",installed=True,container=geoedf_container)
-        collect_exec.addPFN(PFN("/usr/local/bin/collect.py",target))
-        self.tc.addExecutable(collect_exec)
+        collect_exec.addPFN(PFN("/usr/local/bin/collect.py",self.target))
+        self.tc.add(collect_exec)
 
-        self.tc.addExecutable(WorkflowBuilder.build_conn_plugin_subdax)
-        self.tc.addExecutable(WorkflowBuilder.build_proc_plugin_subdax)
+        # executables that create connector and processor plugin subdax
+        # path to executable is determined by running "which"
+        # executables are "bin" scripts installed via engine package
+        build_conn_plugin_subdax = Executable(name="build_conn_plugin_subdax", arch="x86_64", installed=False)
+        conn_plugin_builder_path = self.helper.find_exec_path("build-conn-plugin-subdax")
+        build_conn_plugin_subdax.addPFN(PFN("file://%s" % conn_plugin_builder_path,"local"))
+
+        self.tc.add(build_conn_plugin_subdax)
+        #self.tc.addExecutable(WorkflowBuilder.build_proc_plugin_subdax)
 
         # create an executable for making directories for each workflow stage
         # needs to be at object-level since we need to use the target for the PFN
         mkdir = Executable(name="mkdir", arch="x86_64", installed=True)
         mkdir.addPFN(PFN("/bin/mkdir",self.target))
-        self.tc.addExecutable(mkdir)
+        self.tc.add(mkdir)
 
         # build the site catalog
         self.sc = SitesCatalog(workflow_dir=self.run_dir)
@@ -121,7 +117,11 @@ class WorkflowBuilder
 
     # get a workflow instance using the built DAX
     def get_workflow_instance(self):
-        workflow_inst = Instance(self.dax, replica_catalog=self.rc, transformation_catalog=self.tc, sites_catalog=self.sc, workflow_dir=self.run_dir)
+        try:
+            workflow_inst = Instance(self.dax, replica_catalog=self.rc, transformation_catalog=self.tc, sites_catalog=self.sc, workflow_dir=self.run_dir)
+            return workflow_inst
+        except:
+            raise GeoEDFError('Error creating workflow instance!!')
 
     # build a Pegasus DAX using the workflow-dict
     def build_pegasus_dax(self):
@@ -206,11 +206,13 @@ class WorkflowBuilder
                                 # stage reference and var values files are needed as input
                                 dep_vars_str = self.helper.list_to_str(conn_inst.var_dependencies[plugin_id])
                                 stage_refs_str = self.helper.list_to_str(conn_inst.stage_refs[plugin_id])
-                                subdax_job = self.construct_plugin_subdax(workflow_stage, plugin_id, subdax_filepath, dep_vars_str, stage_refs_str)
+                                stage_id = '%d' % curr_stage
+                                plugin_name = conn_inst.plugin_names[plugin_id]
+                                subdax_job = self.construct_plugin_subdax(stage_id, subdax_filepath, plugin_id, plugin_name, dep_vars_str, stage_refs_str)
                                 self.dax.addJob(subdax_job)
 
-                                # add dependencies; prior stage and any var dependencies
-                                self.dax.depends(parent=self.leaf_job,child=subdax_job)
+                                # add dependencies; mkdir job and any var dependencies
+                                self.dax.depends(parent=make_stage_data_dir,child=subdax_job)
                                 
                                 # dependencies on filters
                                 for dep_plugin_id in conn_inst.plugin_dependencies[plugin_id]:
@@ -221,9 +223,9 @@ class WorkflowBuilder
                                 subdax_exec_job.addArguments("-Dpegasus.catalog.site.file=/usr/local/data/sites.xml",
                                                              "--sites",self.target,
                                                              "--output-site","local",
-                                                             "--basename",stage_name,
-                                                             "--force",
-                                                             "cleanup","none")
+                                                             "--basename",stage_name) #,
+                                                             #"--force",
+                                                             #"cleanup","none")
                                 subdax_exec_job.uses(subdax_file, link=Link.INPUT)
                                 self.dax.addDAX(subdax_exec_job)
                                 # add dependency between job building subdax and job executing it
@@ -236,8 +238,8 @@ class WorkflowBuilder
                                 # update job dictionary
                                 plugin_jobs[plugin_id] = subdax_exec_job
                                 
-                            except:
-                                raise GeoEDFError("Error constructing sub-workflow for plugin %s" % plugin_id)
+                            except Exception as e:
+                                raise GeoEDFError("Error constructing sub-workflow for plugin %s: %s" % (plugin_id,e))
                     # update plugins list
                     for plugin_id in plugins_done:
                         # remove from plugins
@@ -252,7 +254,7 @@ class WorkflowBuilder
     # local run directory (to obtain prior stage output files)
     # var dependencies encoded as comma separated string
     # stage references encoded as comma separated string
-    def construct_stage_subdax(self,workflow_stage,plugin_id=None,subdax_filepath,var_deps_str,stage_refs_str):
+    def construct_plugin_subdax(self,workflow_stage,subdax_filepath,plugin_id=None, plugin_name=None, var_deps_str=None,stage_refs_str=None):
 
         # construct subdax and save in subdax file
         # executable to be used differs based on whether we are
@@ -272,7 +274,8 @@ class WorkflowBuilder
             # dependant vars as comma separated string
             # stage references as comma separated string
             # target site
-            subdax_build_job.addArguments(self.workflow_filename,workflow_stage,plugin_id,subdax_filepath,self.job_dir,self.run_dir,var_deps_str,stage_refs_str,self.target)
+            subdax_build_job.addArguments(self.workflow_filename,workflow_stage,plugin_id,plugin_name,subdax_filepath,self.job_dir,self.run_dir,var_deps_str,stage_refs_str,self.target)
+            return subdax_build_job
 
         #else:
         #    subdax_build_job = Job(name="build_proc_plugin_subdax")

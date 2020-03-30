@@ -25,6 +25,9 @@ class GeoEDFConnector:
 
         # get a helper
         self.helper = WorkflowUtils()
+
+        # set the definition dictionary
+        self.__def_dict = def_dict
         
         # validate the definition
         # will raise an exception if this fails
@@ -33,7 +36,8 @@ class GeoEDFConnector:
             self.var_filter = dict()
             self.var_dependencies = dict()
             self.plugin_dependencies = dict()
-            self.stage_refs() = dict()
+            self.stage_refs = dict()
+            self.plugin_names = dict()
             # now determine the plugin dependencies (variables and stages)
             # used to drive execution order and construct bindings
             self.identify_plugin_dependencies()
@@ -90,34 +94,29 @@ class GeoEDFConnector:
         try:
 
             # each plugin type has its own structure, needs special processing
-            for section in self.__def_dict:
-                if section == 'Input':
-                    for input_plugin in self.__def_dict[section]:
-                        [bound_params,unbound_vars] = self.validate_plugin_def(self.__def_dict[section][input_plugin], \
-                                                                               bound_params,unbound_vars,'Input')
-            
-                if section == 'Filter':
-                    # some of these params can be input params
-                    for filtered_param in self.__def_dict[section]:
-                        # if an input param bound by a filter was already bound in the input definition, then raise error
-                        if filtered_param not in unbound_vars:
-                            raise GeoEDFError('Only variables can be bound by a filter: %s' % filtered_param)
-                        elif filtered_param in bound_vars:
-                            raise GeoEDFError('A variable can only be bound once by a filter: %s' % filtered_param)
-                        else: # add this to the set of bound variables
-                            bound_vars.append(filtered_param)
+            # first process the Input plugin
+            section = 'Input'
+            for input_plugin in self.__def_dict[section]:
+                [bound_params,unbound_vars] = self.validate_plugin_def(self.__def_dict[section][input_plugin], \
+                                                                       bound_params,unbound_vars,'Input')
+            # then the Filter (if it exists)
+            section = 'Filter'
+            # some of these params can be input params
+            if section in self.__def_dict:
+                for filtered_param in self.__def_dict[section]:
+                    # if an input param bound by a filter was already bound in the input definition, then raise error
+                    if filtered_param not in unbound_vars:
+                        raise GeoEDFError('Only variables can be bound by a filter: %s' % filtered_param)
+                    elif filtered_param in bound_vars:
+                        raise GeoEDFError('A variable can only be bound once by a filter: %s' % filtered_param)
+                    else: # add this to the set of bound variables
+                        bound_vars.append(filtered_param)
                             
-                        # get this parameter's filter definition
-                        for param_pre_filter in self.__def_dict[section][filtered_param]:
-                            [bound_params,unbound_vars] = self.validate_plugin_def( \
-                                                               self.__def_dict[section][filtered_param][param_pre_filter], \
-                                                               bound_params,unbound_vars,'Filter')
-                if section == 'Output':
-                    # now process the output plugin
-                    for output_plugin in self.__def_dict[section]:
+                    # get this parameter's filter definition
+                    for param_pre_filter in self.__def_dict[section][filtered_param]:
                         [bound_params,unbound_vars] = self.validate_plugin_def( \
-                                                        self.__def_dict[section][output_plugin], \
-                                                        bound_params,unbound_vars,'Output')
+                                                            self.__def_dict[section][filtered_param][param_pre_filter], \
+                                                            bound_params,unbound_vars,'Filter')
 
             # make sure all variables have been bound
             if len(bound_vars) != len(unbound_vars):
@@ -156,7 +155,7 @@ class GeoEDFConnector:
 
     # determine plugin dependencies (mainly variable-filter chains)
     # encode as a dictionary of dependencies, keyed by stage identifiers
-    # also collect stage references
+    # also collect stage references and (class) names of plugins
     def identify_plugin_dependencies(self):
         # first identify the variable dependencies of each plugin
         # then convert to plugin dependencies
@@ -164,6 +163,8 @@ class GeoEDFConnector:
         # first the input plugin
 
         input_def = self.__def_dict['Input']
+
+        self.plugin_names['Input'] = list(input_def.keys())[0]
 
         # what vars does the Input plugin depend on
         self.var_dependencies['Input'] = self.helper.collect_var_dependencies(input_def)
@@ -179,6 +180,8 @@ class GeoEDFConnector:
                 # keep track of dependencies
                 # construct Filter ID
                 filter_id = 'Filter:%s' % filtered_param
+
+                self.plugin_names[filter_id] = list(filter_def.keys())[0]
 
                 # which filter binds this var
                 self.var_filter[filtered_param] = filter_id

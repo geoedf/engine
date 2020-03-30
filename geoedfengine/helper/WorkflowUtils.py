@@ -20,14 +20,16 @@ class WorkflowUtils:
     # generate a unique ID based on the epoch time
     # the ID is used as a suffix for all workflow and job directories
     def gen_workflow_id(self):
-        self.workflow_id = str(round(time.time()))
+        self.workflow_id = str(int(time.time()))
         return self.workflow_id
 
     # finds the path to an executable by running "which"
-    def find_exec_path(exec_name):
+    def find_exec_path(self,exec_name):
         try:
-            which_proc = subprocess.run(["which",exec_name],stdout=subprocess.PIPE, check=True, encoding="utf-8")
-            return which_proc.stdout.rstrip()
+            #which_proc = subprocess.call(["which",exec_name],stdout=subprocess.PIPE)
+            #return which_proc.stdout.rstrip()
+            ret = subprocess.check_output(["which",exec_name])
+            return str(ret).rstrip()
         except subprocess.CalledProcessError:
             raise GeoEDFError("Error occurred in finding the executable %s. This should not happen if the workflow engine was successfully installed!!!" % exec_name)
 
@@ -44,7 +46,9 @@ class WorkflowUtils:
         full_path = '%s/%s' % (os.getcwd(),self.workflow_id)
 
         try:
-            mkdir_proc = subprocess.run(["mkdir","-p",full_path], check=True)
+            mkdir_proc = subprocess.call(["mkdir","-p",full_path])
+            # set environment variable
+            os.environ["RUN_DIR"] = full_path
             return full_path
         except subprocess.CalledProcessError:
             raise GeoEDFError("Error occurred in creating run directory for this workflow!!!")
@@ -90,45 +94,69 @@ class WorkflowUtils:
                 ret_str = '%s,%s' % (ret_str,val)
             return ret_str
         else:
-           return None
+           return 'None'
 
     # creates binding combinations from two dictionaries of binding lists
     # will return an array of pairs of dictionaries
     # binding_combs({'a':[1,2],'b':[3,4]},{1:[a,b],2:[d,e]})
     # => [[{'a':1,'b':3},{1:a,2:d}],[{'a':1,'b':4},{1:a,2:d}],...]
+    # also works with just dict1 provided
     def create_binding_combs(self,dict1,dict2):
-        # first get a listing of key to convert back into dict
-        keys1 = list(dict1.keys())
-        keys2 = list(dict2.keys())
+        if dict1 is not None and dict2 is not None:
+            # first get a listing of key to convert back into dict
+            keys1 = list(dict1.keys())
+            keys2 = list(dict2.keys())
 
-        # get a cross product of first dictionary
-        dict1_vals = []
-        for key in keys1:
-            dict1_vals.append(dict1[key])
+            # get a cross product of first dictionary
+            dict1_vals = []
+            for key in keys1:
+                dict1_vals.append(dict1[key])
 
-        dict1_combs = list(itertools.product(*list(dict1_vals)))
+            dict1_combs = list(itertools.product(*list(dict1_vals)))
 
-        # get a cross product of the 2nd dictionary
-        dict2_vals = []
-        for key in keys2:
-            dict2_vals.append(dict2[key])
+            # get a cross product of the 2nd dictionary
+            dict2_vals = []
+            for key in keys2:
+                dict2_vals.append(dict2[key])
 
-        dict2_combs = list(itertools.product(*list(dict2_vals)))
+            dict2_combs = list(itertools.product(*list(dict2_vals)))
 
-        # now combine the two
-        dict1_dict2_combs = list(itertools.product(dict1_combs,dict2_combs))
+            # now combine the two
+            dict1_dict2_combs = list(itertools.product(dict1_combs,dict2_combs))
 
-        # now convert this into a list of pairs of dictionaries
-        binding_combs = []
-        for comb_pair in dict1_dict2_combs:
-            dict1_inst = dict()
-            dict2_inst = dict()
-            for indx in range(0,len(keys1)):
-                dict1_inst[keys1[indx]] = comb_pair[0][indx]
-            for indx in range(0,len(keys2)):
-                dict2_inst[keys2[indx]] = comb_pair[1][indx]
-            binding_combs.append((dict1_inst,dict2_inst))
-        return binding_combs
+            # now convert this into a list of pairs of dictionaries
+            binding_combs = []
+            for comb_pair in dict1_dict2_combs:
+                dict1_inst = dict()
+                dict2_inst = dict()
+                for indx in range(0,len(keys1)):
+                    dict1_inst[keys1[indx]] = comb_pair[0][indx]
+                for indx in range(0,len(keys2)):
+                    dict2_inst[keys2[indx]] = comb_pair[1][indx]
+                binding_combs.append((dict1_inst,dict2_inst))
+            return binding_combs
+        # if only one dict provided, return array of dicts
+        elif dict1 is not None:
+            # first get a listing of key to convert back into dict
+            keys1 = list(dict1.keys())
+
+            # get a cross product of the dictionary
+            dict1_vals = []
+            for key in keys1:
+                dict1_vals.append(dict1[key])
+
+            dict1_combs = list(itertools.product(*list(dict1_vals)))
+
+            # now convert this into a list of dictionaries
+            binding_combs = []
+            for comb_pair in dict1_combs:
+                dict1_inst = dict()
+                for indx in range(0,len(keys1)):
+                    dict1_inst[keys1[indx]] = comb_pair[0][indx]
+                binding_combs.append(dict1_inst)
+            return binding_combs
+            
+            
             
                 
         

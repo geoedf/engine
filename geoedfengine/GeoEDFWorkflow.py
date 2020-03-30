@@ -39,22 +39,21 @@ class GeoEDFWorkflow:
         # syntactic and semantic validation (2) ....
 
         # after validation suceeds, create a builder for this workflow
-        builder = WorkflowBuilder(def_filename,target)
+        self.builder = WorkflowBuilder(def_filename,target)
 
         # build the concrete Pegasus workflow
-        builder.build_pegasus_dax()
+        self.builder.build_pegasus_dax()
 
         # get the dax
-        self.dax = builder.dax
-
-        # get a workflow instance to execute
-        self.instance = builder.get_workflow_instance()
+        self.dax = self.builder.dax
 
         # execution target
         self.target = target
 
     # executes the Pegasus DAX constructed by the builder
     def execute(self):
+        # get a workflow instance to execute
+        self.instance = self.builder.get_workflow_instance()
         self.instance.run(site=self.target)
         self.status(loop=True)
 

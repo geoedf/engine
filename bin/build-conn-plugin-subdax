@@ -1,10 +1,12 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 
 # builds a Pegasus subdax for a connector plugin and saves to an XML file
 
 import sys
 import os
 import yaml
+
+sys.path.append('/usr/lib/python2.7/dist-packages')
 
 from Pegasus.DAX3 import *
 
@@ -27,14 +29,15 @@ if len(sys.argv) < 10:
 
 # extract the args
 workflow_filename = str(sys.argv[1])
-workflow_stage = sys.argv[2]
+workflow_stage = str(sys.argv[2])
 plugin_id = str(sys.argv[3])
-subdax_filename = str(sys.argv[4])
-job_dir = str(sys.argv[5])
-run_dir = str(sys.argv[6])
-dep_vars_str = str(sys.argv[7])
-stage_refs_str = str(sys.argv[8])
-target = str(sys.argv[9])
+plugin_name = str(sys.argv[4]).lower()
+subdax_filename = str(sys.argv[5])
+job_dir = str(sys.argv[6])
+run_dir = str(sys.argv[7])
+dep_vars_str = str(sys.argv[8])
+stage_refs_str = str(sys.argv[9])
+target = str(sys.argv[10])
 
 # determine the kind of plugin
 if ':' in plugin_id:
@@ -44,15 +47,15 @@ else:
 
 # initialize DAX, set up some basic executables
 if ':' in plugin_id:
-    dax = ADAG("stage-%d-Filter-%s" % (stage_num,plugin_id.split[1]))
+    dax = ADAG("stage-%s-Filter-%s" % (workflow_stage,plugin_id.split(':')[1]))
 else:
-    dax = ADAG("stage-%d-Input" % stage_num)
+    dax = ADAG("stage-%s-Input" % workflow_stage)
 
 # add the workflow file to this DAX
 workflow_fname = os.path.split(workflow_filename)[1]
-workflow_file = File(workflow_fname)
-workflow_file.addPFN(PFN("file://%s" % workflow_filename,"local"))
-dax.addFile(workflow_file)
+workflow_dax_file = File(workflow_fname)
+workflow_dax_file.addPFN(PFN("file://%s" % workflow_filename,"local"))
+dax.addFile(workflow_dax_file)
 
 # get a helper
 helper = WorkflowUtils()
@@ -62,7 +65,7 @@ with open(workflow_filename,'r') as workflow_file:
     try:
         workflow_dict = yaml.load(workflow_file)
 
-        stage_id = '$%d' % workflow_stage
+        stage_id = '$%s' % workflow_stage
 
         # shouldn't need to build a conn object; just pass in any vars as a string list
         # primarily need to identify the plugin class so we can use the right container
@@ -79,47 +82,154 @@ with open(workflow_filename,'r') as workflow_file:
 
         # process vars and stage references for this plugin
         # reconvert back to list
-        dep_vars = dep_vars_str.split(',')
-        stage_refs = stage_refs_str.split(',')
-
-        dep_var_values = dict()
-        stage_ref_values = dict()
-
         # determine output files holding their values
         # and create a dictionary of variable/stage to value bindings
-        for var in dep_vars:
-            dep_var_values[var] = []
-            var_val_filename = '%s/outputs/results_%d_%s.txt' % (run_dir,workflow_stage,var)
-            with open(var_val_filename,'r') as var_val_file:
-                for val in var_val_file:
-                    dep_var_values[var].append(val)
+        dep_vars_exist = False
+        stage_refs_exist = False
+        
+        if dep_vars_str != 'None':
+            dep_vars_exist = True
+            dep_vars = dep_vars_str.split(',')
+            dep_var_values = dict()
+            for var in dep_vars:
+                dep_var_values[var] = []
+                var_val_filename = '%s/outputs/results_%s_%s.txt' % (run_dir,workflow_stage,var)
+                with open(var_val_filename,'r') as var_val_file:
+                    for val in var_val_file:
+                        dep_var_values[var].append(val)
 
-        for stage_ref in stage_refs:
-            stage_ref_values[stage_ref] = []
-            stage_ref_val_filename = '%s/output/results_%d.txt' % (run_dir,workflow_stage)
-            with open (stage_ref_val_filename,'r') as stage_ref_val_file:
-                for val in stage_ref_val_file:
-                    stage_ref_values[stage_ref].append(val)
+        if stage_refs_str != 'None':
+            stage_refs_exist = True
+            stage_refs = stage_refs_str.split(',')
+            stage_ref_values = dict()
+            for stage_ref in stage_refs:
+                stage_ref_values[stage_ref] = []
+                stage_ref_val_filename = '%s/output/results_%s.txt' % (run_dir,workflow_stage)
+                with open (stage_ref_val_filename,'r') as stage_ref_val_file:
+                    for val in stage_ref_val_file:
+                        stage_ref_values[stage_ref].append(val)
 
         # create binding combos from the values and stage refs
-        binding_combs = helper.create_binding_combs(dep_var_values,stage_ref_values)
+        if dep_vars_exist and stage_refs_exist:
+            binding_combs = helper.create_binding_combs(dep_var_values,stage_ref_values)
 
-        # loop through binding_combs, creating parallel jobs
-        # convert binding to JSON string to send to job
-        indx = 0
-        plugin_jobs = []
-        res_files = []
-        for binding in binding_combs:
-            var_binds = binding[0]
-            stage_binds = binding[1]
+            # loop through binding_combs, creating parallel jobs
+            # convert binding to JSON string to send to job
+            indx = 0
+            plugin_jobs = []
+            res_files = []
+            for binding in binding_combs:
+                var_binds = binding[0]
+                stage_binds = binding[1]
 
-            var_binds_str = json.dumps(var_binds)
-            stage_binds_str = json.dumps(stage_binds)
+                var_binds_str = json.dumps(var_binds)
+                stage_binds_str = json.dumps(stage_binds)
+
+                # if this is a filter, we need to provide an output filepath
+                # filter outputs will be saved there
+                if plugin_type == 'Filter':
+                    res_filename = '%s/results_%s_%s_%d.txt' % (job_dir,workflow_stage,filter_var,indx)
+                    res_file = File(res_filename)
+                    res_files.append(res_file)
+                    dax.addFile(res_file)
+
+                # create job for this plugin
+                plugin_job = Job(name="run-workflow-stage")
+
+                # args:
+                # workflow_file
+                # workflow_stage (encoded with :)
+                # output_path
+                # var binds JSON str
+                # stage refs JSON str
+                plugin_job.addArguments(workflow_dax_file)
+                complete_workflow_stage = '%s:%s' % (workflow_stage,plugin_id)
+                plugin_job.addArguments(complete_workflow_stage)
+            
+                if plugin_type == 'Filter':
+                    plugin_job.addArguments("Filter")
+                    plugin_job.addArguments(res_file)
+                else:
+                    plugin_job.addArguments("Input")
+                    output_dir = '%s/%s' % (job_dir,workflow_stage)
+                    plugin_job.addArguments(output_dir)
+
+                # plugin name as Conda environment name
+                plugin_job.addArguments(plugin_name)
+                
+                plugin_job.addArguments(var_binds_str)
+                plugin_job.addArguments(stage_binds_str)
+                dax.addJob(plugin_job)
+                plugin_jobs.append(plugin_job)
+                
+        # if just one of vars or stage refs is needed
+        elif dep_vars_exist or stage_refs_exist:
+            if dep_vars_exist:
+                binding_combs = helper.create_binding_combs(dep_var_values,None)
+            else:
+                binding_combs = helper.create_binding_combs(stage_ref_values,None)
+
+            indx = 0
+            plugin_jobs = []
+            res_files = []
+            for binding in binding_combs:
+
+                if dep_vars_exist:
+                    var_binds_str = json.dumps(binding)
+                    stage_binds_str = 'None'
+                else:
+                    var_binds_str = 'None'
+                    stage_binds_str = json.dumps(binding)
+                
+
+                # if this is a filter, we need to provide an output filepath
+                # filter outputs will be saved there
+                if plugin_type == 'Filter':
+                    res_filename = '%s/results_%s_%s_%d.txt' % (job_dir,workflow_stage,filter_var,indx)
+                    res_file = File(res_filename)
+                    res_files.append(res_file)
+                    dax.addFile(res_file)
+
+                # create job for this plugin
+                plugin_job = Job(name="run-workflow-stage")
+
+                # args:
+                # workflow_file
+                # workflow_stage (encoded with :)
+                # output_path
+                # var binds JSON str
+                # stage refs JSON str
+                plugin_job.addArguments(workflow_dax_file)
+                complete_workflow_stage = '%s:%s' % (workflow_stage,plugin_id)
+                plugin_job.addArguments(complete_workflow_stage)
+            
+                if plugin_type == 'Filter':
+                    plugin_job.addArguments("Filter")
+                    plugin_job.addArguments(res_file)
+                else:
+                    output_dir = '%s/%s' % (job_dir,workflow_stage)
+                    plugin_job.addArguments("Input")
+                    plugin_job.addArguments(output_dir)
+                
+                # plugin name as Conda environment name
+                plugin_job.addArguments(plugin_name)
+                
+                plugin_job.addArguments(var_binds_str)
+                plugin_job.addArguments(stage_binds_str)
+                dax.addJob(plugin_job)
+                plugin_jobs.append(plugin_job)
+
+        else: # no bindings
+            plugin_jobs = []
+            res_files = []
+            
+            stage_binds_str = 'None'
+            var_binds_str = 'None'
 
             # if this is a filter, we need to provide an output filepath
             # filter outputs will be saved there
             if plugin_type == 'Filter':
-                res_filename = '%s/results_%d_%s_%d.txt' % (job_dir,workflow_stage,filter_var,indx)
+                res_filename = '%s/results_%s_%s_0.txt' % (job_dir,workflow_stage,filter_var)
                 res_file = File(res_filename)
                 res_files.append(res_file)
                 dax.addFile(res_file)
@@ -133,20 +243,25 @@ with open(workflow_filename,'r') as workflow_file:
             # output_path
             # var binds JSON str
             # stage refs JSON str
-            plugin_job.addArguments(workflow_file)
-            complete_workflow_stage = '$%d:%s' % (workflow_stage,plugin_id)
+            plugin_job.addArguments(workflow_dax_file)
+            complete_workflow_stage = '%s:%s' % (workflow_stage,plugin_id)
             plugin_job.addArguments(complete_workflow_stage)
             
             if plugin_type == 'Filter':
+                plugin_job.addArguments("Filter")
                 plugin_job.addArguments(res_file)
             else:
-                output_dir = '%s/%d' % (job_dir,workflow_stage)
+                output_dir = '%s/%s' % (job_dir,workflow_stage)
+                plugin_job.addArguments("Input")
                 plugin_job.addArguments(output_dir)
+                
+            # plugin name as Conda environment name
+            plugin_job.addArguments(plugin_name)
                 
             plugin_job.addArguments(var_binds_str)
             plugin_job.addArguments(stage_binds_str)
             dax.addJob(plugin_job)
-            plugin_job.append(plugin_job)
+            plugin_jobs.append(plugin_job)
 
         # merge results (for filters)
         if plugin_type == 'Filter':
@@ -156,7 +271,7 @@ with open(workflow_filename,'r') as workflow_file:
             merge_job.addArguments(filter_var)
             for res_file in res_files:
                 merge_job.addArguments(res_file)
-            merged_res_filename = 'results_%d_%s.txt' % (workflow_stage,filter_var)
+            merged_res_filename = 'results_%s_%s.txt' % (workflow_stage,filter_var)
             merged_res_file = File(merged_res_filename)
             dax.addFile(merged_res_file)
             merge_job.uses(merged_res_file, link=Link.OUTPUT)
@@ -167,9 +282,9 @@ with open(workflow_filename,'r') as workflow_file:
         # collect output names (for input)
         if plugin_type == 'Input':
             collect_job = Job(name="collect.py")
-            output_dir = '%s/%d' % (job_dir,workflow_stage)
+            output_dir = '%s/%s' % (job_dir,workflow_stage)
             collect_job.addArguments(output_dir)
-            collect_res_filename = 'results_%d.txt' % workflow_stage
+            collect_res_filename = 'results_%s.txt' % workflow_stage
             collect_res_file = File(collect_res_filename)
             dax.addFile(collect_res_file)
             collect_job.uses(collect_res_file, link=Link.OUTPUT)
@@ -181,4 +296,5 @@ with open(workflow_filename,'r') as workflow_file:
         with open(subdax_filename,'w') as subdax_file:
             dax.writeXML(subdax_file)
     except:
-        return -1
+        raise
+
