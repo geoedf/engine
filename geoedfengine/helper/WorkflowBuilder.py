@@ -67,7 +67,8 @@ class WorkflowBuilder:
         self.tc = TransformationCatalog(workflow_dir=self.run_dir)
 
         # add the connector container to the DAX-level TC
-        geoedf_container = Container("geoedf-connector",type="singularity",image="shub://rkalyanapurdue/geoedf-connector:latest",mount=["%s:/data" % self.job_dir])
+        # geoedf_container = Container("geoedf-connector",type="singularity",image="shub://rkalyanapurdue/geoedf-connector:latest",mount=["%s:/data/%s" % (self.job_dir,self.workflow_id)])
+        geoedf_container = Container("geoedf-connector",type="singularity",image="library://rkalyana/default/geoedf",mount=["%s:/data/%s" % (self.job_dir,self.workflow_id)])
         self.tc.add_container(geoedf_container)
         
         # create and add executables
@@ -216,11 +217,12 @@ class WorkflowBuilder:
                                 
                                 # dependencies on filters
                                 for dep_plugin_id in conn_inst.plugin_dependencies[plugin_id]:
-                                    self.dax.depends(parent=plugins_jobs[dep_plugin_id],child=subdax_job)
+                                    self.dax.depends(parent=plugin_jobs[dep_plugin_id],child=subdax_job)
 
                                 # add job executing sub-workflow to DAX
                                 subdax_exec_job = DAX(subdax_filename)
                                 subdax_exec_job.addArguments("-Dpegasus.catalog.site.file=/usr/local/data/sites.xml",
+                                                             "-Dpegasus.integrity.checking=none",
                                                              "--sites",self.target,
                                                              "--output-site","local",
                                                              "--basename",stage_name) #,
@@ -263,7 +265,23 @@ class WorkflowBuilder:
             subdax_build_job = Job(name="build_conn_plugin_subdax")
             # always run this job locally
             subdax_build_job.addProfile(Profile("hints", "execution.site", "local"))
+
+            # for each of the dep vars and stages, add their result files to DAX and as job input
+            var_files = []
+            stage_files = []
             
+            #if var_deps_str != 'None':
+                #for var in var_deps_str.split(','):
+                #    var_filename = 'results_%s_%s.txt' % (workflow_stage,var)
+                #    var_file = File(var_filename)
+                #    var_files.append(var_file)
+                    
+            if stage_refs_str != 'None':
+                for stage_ref in stage_refs_str.split(','):
+                    stage_filename = 'results_%s.txt' % (workflow_stage,stage_ref)
+                    stage_file = File(stage_filename)
+                    stage_files.append(stage_file)
+
             # job arguments:
             # workflow filepath
             # stage identifier
@@ -275,6 +293,12 @@ class WorkflowBuilder:
             # stage references as comma separated string
             # target site
             subdax_build_job.addArguments(self.workflow_filename,workflow_stage,plugin_id,plugin_name,subdax_filepath,self.job_dir,self.run_dir,var_deps_str,stage_refs_str,self.target)
+            #for var_file in var_files:
+            #    subdax_build_job.addArguments(var_file)
+            #    subdax_build_job.uses(var_file, link=Link.INPUT)
+            for stage_file in stage_files:
+                #subdax_build_job.addArguments(stage_file)
+                subdax_build_job.uses(stage_file, link=Link.INPUT)
             return subdax_build_job
 
         #else:

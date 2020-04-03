@@ -71,10 +71,12 @@ class WorkflowUtils:
     # finds binding values for each argument (key in dict) and extracts variables
     def collect_var_dependencies(self,plugin_def):
         var_deps = []
-        for arg in plugin_def.keys():
-            val = plugin_def[arg]
-            val_vars = self.find_dependent_vars(val)
-            var_deps = list(set(var_deps).union(set(val_vars)))
+        for plugin_class in plugin_def.keys():
+            plugin_inst = plugin_def[plugin_class]
+            for arg in plugin_inst.keys():
+                val = plugin_inst[arg]
+                val_vars = self.find_dependent_vars(val)
+                var_deps = list(set(var_deps).union(set(val_vars)))
         return var_deps
 
     # collects stage references in a plugin instance
@@ -144,7 +146,7 @@ class WorkflowUtils:
             dict1_vals = []
             for key in keys1:
                 dict1_vals.append(dict1[key])
-
+                
             dict1_combs = list(itertools.product(*list(dict1_vals)))
 
             # now convert this into a list of dictionaries
@@ -152,7 +154,7 @@ class WorkflowUtils:
             for comb_pair in dict1_combs:
                 dict1_inst = dict()
                 for indx in range(0,len(keys1)):
-                    dict1_inst[keys1[indx]] = comb_pair[0][indx]
+                    dict1_inst[keys1[indx]] = comb_pair[indx]
                 binding_combs.append(dict1_inst)
             return binding_combs
             
