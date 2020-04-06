@@ -103,7 +103,8 @@ with open(workflow_filename,'r') as workflow_file:
                 var_val_filename = '%s/outputs/results_%s_%s.txt' % (run_dir,workflow_stage,var)
                 with open(var_val_filename,'r') as var_val_file:
                     for val in var_val_file:
-                        dep_var_values[var].append(val)
+                        # strip trailing newline
+                        dep_var_values[var].append(val.rstrip())
                 #prior_res_indx += 1
 
         if stage_refs_str != 'None':
@@ -116,7 +117,7 @@ with open(workflow_filename,'r') as workflow_file:
                 stage_ref_val_filename = '%s/outputs/results_%s.txt' % (run_dir,workflow_stage)
                 with open (stage_ref_val_filename,'r') as stage_ref_val_file:
                     for val in stage_ref_val_file:
-                        stage_ref_values[stage_ref].append(val)
+                        stage_ref_values[stage_ref].append(val.rstrip())
                 #prior_res_indx += 1
 
         # create binding combos from the values and stage refs
@@ -172,6 +173,8 @@ with open(workflow_filename,'r') as workflow_file:
                 plugin_job.addArguments(stage_binds_str)
                 dax.addJob(plugin_job)
                 plugin_jobs.append(plugin_job)
+
+                indx += 1
                 
         # if just one of vars or stage refs is needed
         elif dep_vars_exist or stage_refs_exist:
@@ -229,6 +232,8 @@ with open(workflow_filename,'r') as workflow_file:
                 plugin_job.addArguments(stage_binds_str)
                 dax.addJob(plugin_job)
                 plugin_jobs.append(plugin_job)
+
+                indx += 1
 
         else: # no bindings
             plugin_jobs = []
@@ -297,6 +302,7 @@ with open(workflow_filename,'r') as workflow_file:
         if plugin_type == 'Input':
             collect_job = Job(name="collect.py")
             output_dir = '%s/%s' % (job_dir,workflow_stage)
+            collect_job.addArguments(workflow_stage)
             collect_job.addArguments(output_dir)
             collect_res_filename = 'results_%s.txt' % workflow_stage
             collect_res_file = File(collect_res_filename)

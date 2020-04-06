@@ -55,7 +55,7 @@ class GeoEDFWorkflow:
         # get a workflow instance to execute
         self.instance = self.builder.get_workflow_instance()
         self.instance.run(site=self.target)
-        self.status(loop=True)
+        self.instance.status(loop=True)
 
 
 

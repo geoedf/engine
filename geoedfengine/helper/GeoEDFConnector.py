@@ -105,9 +105,10 @@ class GeoEDFConnector:
             if section in self.__def_dict:
                 for filtered_param in self.__def_dict[section]:
                     # if an input param bound by a filter was already bound in the input definition, then raise error
-                    if filtered_param not in unbound_vars:
-                        raise GeoEDFError('Only variables can be bound by a filter: %s' % filtered_param)
-                    elif filtered_param in bound_vars:
+                    #if filtered_param not in unbound_vars:
+                    #    raise GeoEDFError('Only variables can be bound by a filter: %s' % filtered_param)
+                    #elif filtered_param in bound_vars:
+                    if filtered_param in bound_vars:
                         raise GeoEDFError('A variable can only be bound once by a filter: %s' % filtered_param)
                     else: # add this to the set of bound variables
                         bound_vars.append(filtered_param)
@@ -121,7 +122,10 @@ class GeoEDFConnector:
             # make sure all variables have been bound
             if len(bound_vars) != len(unbound_vars):
                 raise GeoEDFError('All variables need to be bound by filters')
-
+            else:
+               for var in unbound_vars:
+                   if var not in bound_vars:
+                       raise GeoEDFError('Variable %s does not have a binding' % var)
             return True
 
         except GeoEDFError:
