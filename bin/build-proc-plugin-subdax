@@ -1,4 +1,211 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
+
+# builds a Pegasus subdax for a processor plugin and saves to an XML file
+
+import sys
+import os
+import yaml
+import json
+
+sys.path.append('/usr/lib/python2.7/dist-packages')
+
+from Pegasus.DAX3 import *
 
 from geoedfengine.helper.GeoEDFProcessor import GeoEDFProcessor
+from geoedfengine.helper.WorkflowUtils import WorkflowUtils
+
+# process command line arguments:
+# workflow filepath
+# workflow stage
+# plugin name to be used to identify right executable (from right container)
+# subdax filepath
+# remote job directory (prefix)
+# run directory
+# stage references as comma separated string
+# arg to local file bindings encoded as JSON string
+# target site
+
+# basic validation on number of args
+if len(sys.argv) < 9:
+    raise Exception("Insufficient arguments to processor plugin subdax construction job")
+
+# extract the args
+workflow_filename = str(sys.argv[1])
+workflow_stage = str(sys.argv[2])
+plugin_name = str(sys.argv[3])
+subdax_filename = str(sys.argv[4])
+job_dir = str(sys.argv[5])
+run_dir = str(sys.argv[6])
+stage_refs_str = str(sys.argv[7])
+local_file_binds_str = str(sys.argv[8])
+target = str(sys.argv[9])
+
+# initialize DAX, set up some basic executables
+dax = ADAG("stage-%s-Processor" % workflow_stage)
+
+# add the workflow file to this DAX
+workflow_fname = os.path.split(workflow_filename)[1]
+workflow_dax_file = File(workflow_fname)
+workflow_dax_file.addPFN(PFN("file://%s" % workflow_filename,"local"))
+dax.addFile(workflow_dax_file)
+
+# get a helper
+helper = WorkflowUtils()
+
+# process the local file arg bindings JSON
+if local_file_arg_binds != 'None':
+    local_file_args_exist = True
+    local_file_binds = json.loads(local_file_binds_str)
+    
+    # create comma separated string of local file args and list of filepath vals
+    local_file_args = list(local_file_binds.keys())
+
+    local_files_needed = []
+    for arg in local_file_args:
+        local_files_needed.append(local_file_arg_binds[arg])
+
+    local_file_args_str = '%s' % local_file_args[0]
+
+    for arg in local_file_args[1:]:
+        local_file_args_str = '%s,%s' % (local_file_args_str,arg)
+else:
+    local_file_args_exist = False
+    local_file_args_str = 'None'
+
+# if local file args exist, add input files to DAX
+local_dax_files = []
+if local_file_args_exist:
+    for local_file in local_files_needed:
+        local_file_fname = os.path.split(local_file)[1]
+        local_dax_file = File(local_file_fname)
+        local_dax_file.addPFN(PFN("file://%s" % local_file,"local"))
+        dax.addFile(local_dax_file)
+        local_dax_files.append(local_dax_file)
+
+# extract the workflow stage
+with open(workflow_filename,'r') as workflow_file:
+    try:
+        workflow_dict = yaml.load(workflow_file)
+
+        stage_id = '$%s' % workflow_stage
+
+        # process stage references for this plugin (processors cannot have vars)
+        # reconvert back to list
+        # determine output files holding their values
+        # and create a dictionary of stage to value bindings
+        stage_refs_exist = False
+        
+        if stage_refs_str != 'None':
+            stage_refs_exist = True
+            stage_refs = stage_refs_str.split(',')
+            stage_ref_values = dict()
+            for stage_ref in stage_refs:
+                stage_ref_values[stage_ref] = []
+                stage_ref_val_filename = '%s/outputs/results_%s.txt' % (run_dir,workflow_stage)
+                with open (stage_ref_val_filename,'r') as stage_ref_val_file:
+                    for val in stage_ref_val_file:
+                        stage_ref_values[stage_ref].append(val.rstrip())
+
+        # if stage refs exist, build binding combinations and corresponding parallel jobs
+        if stage_refs_exist:
+
+            binding_combs = helper.create_binding_combs(stage_ref_values,None)
+
+            indx = 0
+            plugin_jobs = []
+            res_files = []
+            for binding in binding_combs:
+
+                stage_binds_str = json.dumps(json.dumps(binding))
+
+                # create job for this plugin
+                # executable name is different for each proc since
+                # it needs to be run in the processor's own container
+                exec_name = "run-processor-%s" % plugin_name.lower()
+                plugin_job = Job(name=exec_name)
+
+                # args:
+                # workflow_file
+                # workflow_stage
+                # plugin type
+                # output_path
+                # stage refs JSON str
+                # local file args str
+                # optional trailing list of file args (local files converted to inputs)
+                plugin_job.addArguments(workflow_dax_file)
+                plugin_job.uses(workflow_dax_file, link=Link.INPUT)
+                
+                plugin_job.addArguments(workflow_stage)
+            
+                output_dir = '%s/%s' % (job_dir,workflow_stage)
+                plugin_job.addArguments("Processor")
+                plugin_job.addArguments(output_dir)
+                
+                plugin_job.addArguments(stage_binds_str)
+                plugin_job.addArguments(local_file_args_str)
+
+                for local_dax_file in local_dax_files:
+                    plugin_job.addArguments(local_dax_file)
+                    
+                dax.addJob(plugin_job)
+                plugin_jobs.append(plugin_job)
+
+                indx += 1
+
+        else: # no bindings
+            plugin_jobs = []
+            res_files = []
+            
+            stage_binds_str = 'None'
+
+            # create job for this plugin
+            # executable name is different for each proc since
+            # it needs to be run in the processor's own container
+            exec_name = "run-processor-%s" % plugin_name.lower()
+            plugin_job = Job(name=exec_name)
+
+            # args:
+            # workflow_file
+            # workflow_stage
+            # plugin type
+            # output_path
+            # stage refs JSON str
+            # local file args str
+            # optional trailing list of file args (local files converted to inputs)
+            plugin_job.addArguments(workflow_dax_file)
+            plugin_job.uses(workflow_dax_file, link=Link.INPUT)
+                
+            plugin_job.addArguments(workflow_stage)
+            
+            output_dir = '%s/%s' % (job_dir,workflow_stage)
+            plugin_job.addArguments("Processor")
+            plugin_job.addArguments(output_dir)
+                
+            plugin_job.addArguments(stage_binds_str)
+            plugin_job.addArguments(local_file_args_str)
+
+            for local_dax_file in local_dax_files:
+                plugin_job.addArguments(local_dax_file)
+                    
+            dax.addJob(plugin_job)
+            plugin_jobs.append(plugin_job)
+
+        #collect output file names
+        collect_job = Job(name="collect.py")
+        output_dir = '%s/%s' % (job_dir,workflow_stage)
+        collect_job.addArguments(workflow_stage)
+        collect_job.addArguments(output_dir)
+        collect_res_filename = 'results_%s.txt' % workflow_stage
+        collect_res_file = File(collect_res_filename)
+        dax.addFile(collect_res_file)
+        collect_job.uses(collect_res_file, link=Link.OUTPUT)
+        dax.addJob(collect_job)
+        for plugin_job in plugin_jobs:
+            dax.depends(parent=plugin_job,child=collect_job)
+
+        # write out to DAX xml file
+        with open(subdax_filename,'w') as subdax_file:
+            dax.writeXML(subdax_file)
+    except:
+        raise
 

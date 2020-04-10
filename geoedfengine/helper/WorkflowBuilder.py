@@ -67,23 +67,30 @@ class WorkflowBuilder:
         self.tc = TransformationCatalog(workflow_dir=self.run_dir)
 
         # add the connector container to the DAX-level TC
-        # geoedf_container = Container("geoedf-connector",type="singularity",image="shub://rkalyanapurdue/geoedf-connector:latest",mount=["%s:/data/%s" % (self.job_dir,self.workflow_id)])
-        geoedf_container = Container("geoedf-connector",type="singularity",image="library://rkalyana/default/geoedf",mount=["%s:/data/%s" % (self.job_dir,self.workflow_id)])
-        self.tc.add_container(geoedf_container)
+        # conn_container = Container("geoedf-connector",type="singularity",image="shub://rkalyanapurdue/geoedf-connector:latest",mount=["%s:/data/%s" % (self.job_dir,self.workflow_id)])
+        conn_container = Container("geoedf-connector",type="singularity",image="library://rkalyana/default/geoedf",mount=["%s:/data/%s" % (self.job_dir,self.workflow_id)])
+        self.tc.add_container(conn_container)
         
-        # create and add executables
+        # create and add executables for running connector plugins
 
-        conn_exec = Executable("run-workflow-stage",installed=True,container=geoedf_container)
+        conn_exec = Executable("run-connector-plugin",installed=True,container=conn_container)
         conn_exec.addPFN(PFN("/usr/local/bin/run-workflow-stage.sh",self.target))
         self.tc.add(conn_exec)
 
-        merge_exec = Executable("merge.py",installed=True,container=geoedf_container)
-        merge_exec.addPFN(PFN("/usr/local/bin/merge.py",self.target))
-        self.tc.add(merge_exec)
+        merge_filter_out_exec = Executable("merge.py",installed=True,container=conn_container)
+        merge_filter_out_exec.addPFN(PFN("/usr/local/bin/merge.py",self.target))
+        self.tc.add(merge_filter_out_exec)
 
-        collect_exec = Executable("collect.py",installed=True,container=geoedf_container)
-        collect_exec.addPFN(PFN("/usr/local/bin/collect.py",self.target))
-        self.tc.add(collect_exec)
+        collect_input_out_exec = Executable("collect.py",installed=True,container=conn_container)
+        collect_input_out_exec.addPFN(PFN("/usr/local/bin/collect.py",self.target))
+        self.tc.add(collect_input_out_exec)
+
+        # parse processor registry and add processor containers and executables to the DAX-level TC
+        hdfeosshapefilemask_cont = Container("geoedf-hdfeosshapefilemask",type="singularity",image="library://rkalyana/default/geoedf-hdfeosshapefilemask",mount=["%s:/data/%s" % (self.job_dir,self.workflow_id)])
+        self.tc.add_container(hdfeosshapefilemask_container)
+        hdfeosshapefilemask_exec = Executable("run-processor-hdfeosshapefilemask",installed=True,container=hdfeosshapefilemask_cont)
+        hdfeosshapefilemask_exec.addPFN(PFN("/usr/local/bin/run-workflow-stage.sh",self.target))
+        self.tc.add(hdfeosshapefilemask_exec)
 
         # executables that create connector and processor plugin subdax
         # path to executable is determined by running "which"
@@ -93,7 +100,12 @@ class WorkflowBuilder:
         build_conn_plugin_subdax.addPFN(PFN("file://%s" % conn_plugin_builder_path,"local"))
 
         self.tc.add(build_conn_plugin_subdax)
-        #self.tc.addExecutable(WorkflowBuilder.build_proc_plugin_subdax)
+
+        build_proc_plugin_subdax = Executable(name="build_proc_plugin_subdax", arch="x86_64", installed=False)
+        proc_plugin_builder_path = self.helper.find_exec_path("build-proc-plugin-subdax")
+        build_proc_plugin_subdax.addPFN(PFN("file://%s" % proc_plugin_builder_path,"local"))
+
+        self.tc.add(build_proc_plugin_subdax)
 
         # create an executable for making directories for each workflow stage
         # needs to be at object-level since we need to use the target for the PFN
@@ -148,6 +160,10 @@ class WorkflowBuilder:
             # retrieve this workflow stage and build subdax for each plugin in it
             workflow_stage  = self.workflow_dict[stage_id]
 
+            # some simple validation
+            if len(workflow_stage.keys()) == 0:
+                raise GeoEDFError("Stage %d does not have any plugins" % curr_stage)
+
             # naive implementation of connector | processor check
             if 'Input' in workflow_stage.keys():
                 stage_type = WorkflowBuilder.CONNECTOR
@@ -156,98 +172,162 @@ class WorkflowBuilder:
 
             # slightly more complex in case of connector
             if stage_type == WorkflowBuilder.CONNECTOR:
+                self.construct_conn_subdax(curr_stage,workflow_stage,make_stage_data_dir)
+            else:
+                self.construct_proc_subdax(curr_stage,workflow_stage,make_stage_data_dir)
 
-                # instantiate GeoEDFConnector object which performs validation
-                # and identifies dependency chain
-                conn_inst = GeoEDFConnector(workflow_stage)
-                
-                # then loop through plugins, creating subdax for any that are fully
-                # bound, until all plugins have been run
-                plugins = conn_inst.plugin_dependencies.keys()
+    # constructs the subdax and its executor job for a connector in the workflow
+    def construct_conn_subdax(self,stage_num,workflow_stage,stage_mkdir_job):
+        # instantiate GeoEDFConnector object which performs validation
+        # and identifies dependency chain
+        conn_inst = GeoEDFConnector(workflow_stage)
 
-                # dictionary of jobs keyed by plugin id to set up dependencies
-                plugin_jobs = dict()
+        # then loop through plugins, creating subdax for any that are fully
+        # bound, until all plugins have been run
+        plugins = conn_inst.plugin_dependencies.keys()
 
-                # while plugins still exist
-                while len(plugins) > 0:
+        # dictionary of jobs keyed by plugin id to set up dependencies
+        plugin_jobs = dict()
 
-                    plugins_done = []
+        # while plugins still exist
+        while len(plugins) > 0:
+
+            plugins_done = []
                     
-                    # find ones that are fully bound and create jobs
-                    # manage dependencies for these jobs, essentially vars + prior stage
-                    for plugin_id in plugins:
-                        fully_bound = True
-                        for dep_plugin in conn_inst.plugin_dependencies[plugin_id]:
-                            # dependency not yet bound, skip
-                            if dep_plugin in plugins:
-                                fully_bound = False
-                                break
-                        if fully_bound:
-                            # plugin can be executed, create a subdax for this plugin
-                            plugins_done.append(plugin_id)
+            # find ones that are fully bound and create jobs
+            # manage dependencies for these jobs, essentially vars + prior stage
+            for plugin_id in plugins:
+                fully_bound = True
+                for dep_plugin in conn_inst.plugin_dependencies[plugin_id]:
+                    # dependency not yet bound, skip
+                    if dep_plugin in plugins:
+                        fully_bound = False
+                        break
+                
+                # can't process this plugin yet, try another
+                if not fully_bound:
+                    continue
+            
+                # plugin can be executed, create a subdax for this plugin
+                plugins_done.append(plugin_id)
 
-                            # file to hold the subdax for this plugin
-                            # if filter
-                            if ':' in plugin_id:
-                                stage_name = 'stage-%d-Filter-%s' % (curr_stage,plugin_id.split(':')[1])
-                            else: #input
-                                stage_name = 'stage-%d-Input' % curr_stage
+                # file to hold the subdax for this plugin
+                # if filter
+                if ':' in plugin_id:
+                    stage_name = 'stage-%d-Filter-%s' % (curr_stage,plugin_id.split(':')[1])
+                else: #input
+                    stage_name = 'stage-%d-Input' % curr_stage
                                 
-                            subdax_filename = '%s.xml' % stage_name
+                subdax_filename = '%s.xml' % stage_name
 
-                            # add subdax file to DAX
-                            subdax_file = File(subdax_filename)
-                            subdax_filepath = '%s/%s' % (self.run_dir, subdax_filename)
-                            subdax_file.addPFN(PFN("file://%s" % subdax_filepath, "local"))
-                            self.dax.addFile(subdax_file)
+                # add subdax file to DAX
+                subdax_file = File(subdax_filename)
+                subdax_filepath = '%s/%s' % (self.run_dir, subdax_filename)
+                subdax_file.addPFN(PFN("file://%s" % subdax_filepath, "local"))
+                self.dax.addFile(subdax_file)
 
-                            # if subdax construction succeeds, then create a job to execute this subdax
-                            try:
-                                # job constructing subdax for this stage
-                                # stage reference and var values files are needed as input
-                                dep_vars_str = self.helper.list_to_str(conn_inst.var_dependencies[plugin_id])
-                                stage_refs_str = self.helper.list_to_str(conn_inst.stage_refs[plugin_id])
-                                stage_id = '%d' % curr_stage
-                                plugin_name = conn_inst.plugin_names[plugin_id]
-                                subdax_job = self.construct_plugin_subdax(stage_id, subdax_filepath, plugin_id, plugin_name, dep_vars_str, stage_refs_str)
-                                self.dax.addJob(subdax_job)
+                # construct subdax for this plugin, then create a job to execute this subdax
+                try:
+                    # job constructing subdax for this stage
+                    # stage reference and var values files are needed as input
+                    dep_vars_str = self.helper.list_to_str(conn_inst.var_dependencies[plugin_id])
+                    stage_refs_str = self.helper.list_to_str(conn_inst.stage_refs[plugin_id])
+                    # if local args dictionary is empty
+                    if not conn_inst.local_file_args[plugin_id]:
+                        local_file_args_str = 'None'
+                    else:
+                        local_file_args_str = json.dumps(json.dumps(conn_inst.local_file_args[plugin_id])
+                    stage_id = '%d' % curr_stage
+                    plugin_name = conn_inst.plugin_names[plugin_id]
+                    subdax_job = self.construct_plugin_subdax(stage_id, subdax_filepath, plugin_id, plugin_name, dep_vars_str, stage_refs_str,local_file_args_str)
+                    self.dax.addJob(subdax_job)
 
-                                # add dependencies; mkdir job and any var dependencies
-                                self.dax.depends(parent=make_stage_data_dir,child=subdax_job)
+                    # add dependencies; mkdir job and any var dependencies
+                    self.dax.depends(parent=make_stage_data_dir,child=subdax_job)
                                 
-                                # dependencies on filters
-                                for dep_plugin_id in conn_inst.plugin_dependencies[plugin_id]:
-                                    self.dax.depends(parent=plugin_jobs[dep_plugin_id],child=subdax_job)
+                    # dependencies on filters
+                    for dep_plugin_id in conn_inst.plugin_dependencies[plugin_id]:
+                        self.dax.depends(parent=plugin_jobs[dep_plugin_id],child=subdax_job)
 
-                                # add job executing sub-workflow to DAX
-                                subdax_exec_job = DAX(subdax_filename)
-                                subdax_exec_job.addArguments("-Dpegasus.catalog.site.file=/usr/local/data/sites.xml",
-                                                             "-Dpegasus.integrity.checking=none",
-                                                             "--sites",self.target,
-                                                             "--output-site","local",
-                                                             "--basename",stage_name) #,
-                                                             #"--force",
-                                                             #"cleanup","none")
-                                subdax_exec_job.uses(subdax_file, link=Link.INPUT)
-                                self.dax.addDAX(subdax_exec_job)
-                                # add dependency between job building subdax and job executing it
-                                self.dax.depends(parent=subdax_job, child=subdax_exec_job)
+                    # add job executing sub-workflow to DAX
+                    subdax_exec_job = DAX(subdax_filename)
+                    subdax_exec_job.addArguments("-Dpegasus.catalog.site.file=/usr/local/data/sites.xml",
+                                                 "-Dpegasus.integrity.checking=none",
+                                                 "--sites",self.target,
+                                                 "--output-site","local",
+                                                 "--basename",stage_name)
+                    subdax_exec_job.uses(subdax_file, link=Link.INPUT)
+                    self.dax.addDAX(subdax_exec_job)
+                    # add dependency between job building subdax and job executing it
+                    self.dax.depends(parent=subdax_job, child=subdax_exec_job)
 
-                                # if this is an Input plugin, make it the leaf of this stage
-                                if plugin_id == 'Input':
-                                    self.leaf_job = subdax_exec_job
+                    # if this is an Input plugin, make it the leaf of this stage
+                    if plugin_id == 'Input':
+                        self.leaf_job = subdax_exec_job
 
-                                # update job dictionary
-                                plugin_jobs[plugin_id] = subdax_exec_job
+                    # update job dictionary
+                    plugin_jobs[plugin_id] = subdax_exec_job
                                 
-                            except Exception as e:
-                                raise GeoEDFError("Error constructing sub-workflow for plugin %s: %s" % (plugin_id,e))
-                    # update plugins list
-                    for plugin_id in plugins_done:
-                        # remove from plugins
-                        plugins.remove(plugin_id)
-                        
+                except Exception as e:
+                    raise GeoEDFError("Error constructing sub-workflow for plugin %s: %s" % (plugin_id,e))
+                                                         
+            # update plugins list
+            for plugin_id in plugins_done:
+                # remove from plugins
+                plugins.remove(plugin_id)
 
+    # constructs the subdax and its executor job for a processor in the workflow
+    def construct_proc_subdax(self,stage_num,workflow_stage,stage_mkdir_job):
+        # instantiate GeoEDFProcessor object which performs validation
+        proc_inst = GeoEDFProcessor(workflow_stage)
+
+        # file to hold the subdax for this plugin
+        stage_name = 'stage-%d-Processor' % stage_num
+                                
+        subdax_filename = '%s.xml' % stage_name
+
+        # add subdax file to DAX
+        subdax_file = File(subdax_filename)
+        subdax_filepath = '%s/%s' % (self.run_dir, subdax_filename)
+        subdax_file.addPFN(PFN("file://%s" % subdax_filepath, "local"))
+        self.dax.addFile(subdax_file)
+
+        # construct subdax for this processor plugin, then create a job to execute this subdax
+        try:
+            # job constructing subdax for this stage
+            # stage references are needed as input
+            stage_refs_str = self.helper.list_to_str(proc_inst.stage_refs)
+            # if local args dictionary is empty
+            if not proc_inst.local_file_args:
+                local_file_args_str = 'None'
+            else:
+                local_file_args_str = json.dumps(json.dumps(proc_inst.local_file_args)
+            stage_id = '%d' % curr_stage
+            plugin_name = proc_inst.plugin_name
+            subdax_job = self.construct_plugin_subdax(stage_id, subdax_filepath, plugin_name=plugin_name, stage_refs_str=stage_refs_str, local_file_args_str=local_file_args_str)
+            self.dax.addJob(subdax_job)
+
+            # add dependency on mkdir job
+            self.dax.depends(parent=make_stage_data_dir,child=subdax_job)
+                                
+            # add job executing sub-workflow to DAX
+            subdax_exec_job = DAX(subdax_filename)
+            subdax_exec_job.addArguments("-Dpegasus.catalog.site.file=/usr/local/data/sites.xml",
+                                         "-Dpegasus.integrity.checking=none",
+                                         "--sites",self.target,
+                                         "--output-site","local",
+                                         "--basename",stage_name)
+            subdax_exec_job.uses(subdax_file, link=Link.INPUT)
+            self.dax.addDAX(subdax_exec_job)
+            # add dependency between job building subdax and job executing it
+            self.dax.depends(parent=subdax_job, child=subdax_exec_job)
+
+            # update the leaf of the DAX to point to this job
+            self.leaf_job = subdax_exec_job
+
+            except Exception as e:
+                raise GeoEDFError("Error constructing sub-workflow for plugin %s: %s" % (plugin_name,e))
+                                                         
     # return job constructing subdax for a given workflow stage plugin
     # needs the workflow file, stage number, plugin ID (in case of connectors)
     # file to store subdax XML in
@@ -256,7 +336,8 @@ class WorkflowBuilder:
     # local run directory (to obtain prior stage output files)
     # var dependencies encoded as comma separated string
     # stage references encoded as comma separated string
-    def construct_plugin_subdax(self,workflow_stage,subdax_filepath,plugin_id=None, plugin_name=None, var_deps_str=None,stage_refs_str=None):
+    # args bound to local files encoded as a JSON string of arg-filepath mappings
+    def construct_plugin_subdax(self,workflow_stage,subdax_filepath,plugin_id=None, plugin_name=None, var_deps_str=None,stage_refs_str=None,local_file_args_str=None):
 
         # construct subdax and save in subdax file
         # executable to be used differs based on whether we are
@@ -265,22 +346,6 @@ class WorkflowBuilder:
             subdax_build_job = Job(name="build_conn_plugin_subdax")
             # always run this job locally
             subdax_build_job.addProfile(Profile("hints", "execution.site", "local"))
-
-            # for each of the dep vars and stages, add their result files to DAX and as job input
-            var_files = []
-            stage_files = []
-            
-            #if var_deps_str != 'None':
-                #for var in var_deps_str.split(','):
-                #    var_filename = 'results_%s_%s.txt' % (workflow_stage,var)
-                #    var_file = File(var_filename)
-                #    var_files.append(var_file)
-                    
-            if stage_refs_str != 'None':
-                for stage_ref in stage_refs_str.split(','):
-                    stage_filename = 'results_%s.txt' % (workflow_stage,stage_ref)
-                    stage_file = File(stage_filename)
-                    stage_files.append(stage_file)
 
             # job arguments:
             # workflow filepath
@@ -291,20 +356,30 @@ class WorkflowBuilder:
             # run directory
             # dependant vars as comma separated string
             # stage references as comma separated string
+            # arg bindings to local files as JSON string
             # target site
-            subdax_build_job.addArguments(self.workflow_filename,workflow_stage,plugin_id,plugin_name,subdax_filepath,self.job_dir,self.run_dir,var_deps_str,stage_refs_str,self.target)
-            #for var_file in var_files:
-            #    subdax_build_job.addArguments(var_file)
-            #    subdax_build_job.uses(var_file, link=Link.INPUT)
-            for stage_file in stage_files:
-                #subdax_build_job.addArguments(stage_file)
-                subdax_build_job.uses(stage_file, link=Link.INPUT)
+            subdax_build_job.addArguments(self.workflow_filename,workflow_stage,plugin_id,plugin_name,subdax_filepath,self.job_dir,self.run_dir,var_deps_str,stage_refs_str,local_file_args_str,self.target)
+            
             return subdax_build_job
 
-        #else:
-        #    subdax_build_job = Job(name="build_proc_plugin_subdax")
+        else:
+            subdax_build_job = Job(name="build_proc_plugin_subdax")
 
-        
-        
-                
-        
+            # always run this job locally
+            subdax_build_job.addProfile(Profile("hints", "execution.site", "local"))
+
+            # job arguments:
+            # workflow filepath
+            # stage identifier
+            # plugin identifier
+            # subdax filepath
+            # remote job directory
+            # run directory
+            # dependant vars as comma separated string
+            # stage references as comma separated string
+            # arg bindings to local files as JSON string
+            # target site
+            subdax_build_job.addArguments(self.workflow_filename,workflow_stage,'None',plugin_name,subdax_filepath,self.job_dir,self.run_dir,'None',stage_refs_str,local_file_args_str,self.target)
+            
+            return subdax_build_job
+

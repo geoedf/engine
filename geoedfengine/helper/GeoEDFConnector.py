@@ -38,9 +38,15 @@ class GeoEDFConnector:
             self.plugin_dependencies = dict()
             self.stage_refs = dict()
             self.plugin_names = dict()
+            self.local_file_args = dict()
             # now determine the plugin dependencies (variables and stages)
             # used to drive execution order and construct bindings
             self.identify_plugin_dependencies()
+
+            # now determine args bound to local files
+            # these files needs to be transferred as inputs
+            # args need to be "rebound" to actual filepath on execution host
+            self.identify_local_file_args()
         else:
             raise GeoEDFError('Connector fails validation!')
 
@@ -70,6 +76,10 @@ class GeoEDFConnector:
                     if var in unbound_vars:
                         raise GeoEDFError('Cannot reuse variable: %s' % var)
                     unbound_vars.append(var)
+            # validate any stage references in param value
+            # will raise exception if any error
+            self.helper.validate_stage_refs(param_val)
+                
         # check that variables are not also bound parameters
         # have to use names distinct from 'reserved' plugin parameter names
         # first update the set of bound params
@@ -213,3 +223,25 @@ class GeoEDFConnector:
             self.plugin_dependencies[filter_id] = []
             for dep_var in self.var_dependencies[filter_id]:
                 self.plugin_dependencies[filter_id].append(self.var_filter[dep_var])
+
+    # determine args bound to local files for each plugin
+    # creates a dictionary mapping arg to file
+    def identify_local_file_args(self):
+        input_def = self.__def_dict['Input']
+
+        # what args are bound to local files in Input plugin
+        # encoded as a dictionary mapping arg to local filepath value
+        self.local_file_args['Input'] = self.helper.collect_local_file_bindings(input_def)
+
+        # do we have any filters?
+        if 'Filter' in self.__def_dict:
+            for filtered_param in self.__def_dict['Filter']:
+                filter_def = self.__def_dict['Filter'][filtered_param]
+
+                # construct Filter ID
+                filter_id = 'Filter:%s' % filtered_param
+
+                # what args in Filter are bound to local files
+                self.local_file_args[filter_id] = self.helper.collect_local_file_bindings(filter_def)
+
+        

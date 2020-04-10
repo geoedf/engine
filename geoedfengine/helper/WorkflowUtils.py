@@ -56,16 +56,58 @@ class WorkflowUtils:
     # parses a string to find the mentioned variables: %{var}
     def find_dependent_vars(self,value):
         if value is not None and isinstance(value, str):
-            return re.findall('\%\{(.+?)\}',value)
+            return re.findall('\%\{(.+)\}',value)
         else:
             return []
 
     # parses a string to find stage references: $#
     def find_stage_refs(self,value):
         if value is not None and isinstance(value,str):
-            return re.findall('\$([0-9]+?)',value)
+            return re.findall('\$([0-9]+)',value)
         else:
             return []
+
+    # checks to make sure value is of format dir(dir(....$n)...)
+    # could have used a parser here, instead do a lazy recursive check
+    # will work first time since we only call if starts with dir(
+    def validate_dir_modifiers(self,value,kernel):
+        subexp = re.findall('dir\((.+)\)',value)
+        # needs to be exactly one or equal to kernel
+        if len(subexp) > 0:
+            if len(subexp) > 1:
+                return False
+            else: # exactly one
+                # first ensure this is the right subexpression
+                reconstruction = 'dir(%s)' % subexp[0]
+                if value != reconstruction:
+                    return False
+                if subexp[0].startswith('dir('): #recurse
+                    return self.validate_dir_modifiers(subexp[0],kernel)
+                else:
+                    if subexp[0] != kernel:
+                        return False
+        else:
+            return False
+
+    # validates stage refs (if they exist) in value
+    # only allows exactly one stage ref and zero or more dir modifiers
+    def validate_stage_refs(self,value):
+        if value is not None and isinstance(value,str):
+            # first find the stage refs
+            stage_refs = self.find_stage_refs(value)
+            if len(stage_refs) > 0: #stage refs exist
+                if len(stage_refs) > 1:
+                    raise GeoEDFError("Cannot reference more than one stage in a binding")
+                # validate value to ensure it has stage ref with zero or more modifiers
+                stage_ref_str = '$%s' % stage_refs[0]
+                if value.startswith('dir('): # one or more dir modifiers exist
+                    if not self.validate_dir_modifiers(value,stage_ref_str):
+                        raise GeoEDFError("Error validating stage reference %s" % value)
+                else: # dir modifier is not a prefix, need to be exactly the stage reference
+                    if value != stage_ref_str:
+                        raise GeoEDFError("stage reference has to have zero or more dir modifiers applied to it")
+            else:
+                return True
 
     # collect var dependencies for a plugin instance
     # finds binding values for each argument (key in dict) and extracts variables
@@ -87,6 +129,23 @@ class WorkflowUtils:
             val_stage_refs = self.find_stage_refs(val)
             refs = list(set(refs).union(set(val_stage_refs)))
         return refs
+
+    # uses naive identification of local files - either has an extension or / separator
+    # checks to see if these are actually files on this host and add to dictionary
+    def is_local_file(self,val_str):
+        if '.' in val_str or '/' in val_str: # hardcoded path separator
+            if os.path.isfile(val_str):
+                return true
+        return false
+
+    # collects args bound to local files
+    def collect_local_file_bindings(self,plugin_def):
+        file_binds = dict()
+        for arg in plugin_def.keys():
+            val = plugin_def[arg]
+            if isinstance(val,str) and is_local_file(val): #lazy eval
+                file_binds[arg] = val
+        return file_binds
 
     # converts a list into a comma separated string
     def list_to_str(self,val_list):
