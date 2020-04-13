@@ -10,6 +10,7 @@
 import sys
 import os
 import yaml
+import json
 import re
 
 from .GeoEDFError import GeoEDFError
@@ -87,7 +88,7 @@ class WorkflowBuilder:
 
         # parse processor registry and add processor containers and executables to the DAX-level TC
         hdfeosshapefilemask_cont = Container("geoedf-hdfeosshapefilemask",type="singularity",image="library://rkalyana/default/geoedf-hdfeosshapefilemask",mount=["%s:/data/%s" % (self.job_dir,self.workflow_id)])
-        self.tc.add_container(hdfeosshapefilemask_container)
+        self.tc.add_container(hdfeosshapefilemask_cont)
         hdfeosshapefilemask_exec = Executable("run-processor-hdfeosshapefilemask",installed=True,container=hdfeosshapefilemask_cont)
         hdfeosshapefilemask_exec.addPFN(PFN("/usr/local/bin/run-workflow-stage.sh",self.target))
         self.tc.add(hdfeosshapefilemask_exec)
@@ -214,9 +215,9 @@ class WorkflowBuilder:
                 # file to hold the subdax for this plugin
                 # if filter
                 if ':' in plugin_id:
-                    stage_name = 'stage-%d-Filter-%s' % (curr_stage,plugin_id.split(':')[1])
+                    stage_name = 'stage-%d-Filter-%s' % (stage_num,plugin_id.split(':')[1])
                 else: #input
-                    stage_name = 'stage-%d-Input' % curr_stage
+                    stage_name = 'stage-%d-Input' % stage_num
                                 
                 subdax_filename = '%s.xml' % stage_name
 
@@ -236,14 +237,14 @@ class WorkflowBuilder:
                     if not conn_inst.local_file_args[plugin_id]:
                         local_file_args_str = 'None'
                     else:
-                        local_file_args_str = json.dumps(json.dumps(conn_inst.local_file_args[plugin_id])
-                    stage_id = '%d' % curr_stage
+                        local_file_args_str = json.dumps(json.dumps(conn_inst.local_file_args[plugin_id]))
+                    stage_id = '%d' % stage_num
                     plugin_name = conn_inst.plugin_names[plugin_id]
                     subdax_job = self.construct_plugin_subdax(stage_id, subdax_filepath, plugin_id, plugin_name, dep_vars_str, stage_refs_str,local_file_args_str)
                     self.dax.addJob(subdax_job)
 
                     # add dependencies; mkdir job and any var dependencies
-                    self.dax.depends(parent=make_stage_data_dir,child=subdax_job)
+                    self.dax.depends(parent=stage_mkdir_job,child=subdax_job)
                                 
                     # dependencies on filters
                     for dep_plugin_id in conn_inst.plugin_dependencies[plugin_id]:
@@ -301,14 +302,14 @@ class WorkflowBuilder:
             if not proc_inst.local_file_args:
                 local_file_args_str = 'None'
             else:
-                local_file_args_str = json.dumps(json.dumps(proc_inst.local_file_args)
-            stage_id = '%d' % curr_stage
+                local_file_args_str = json.dumps(json.dumps(proc_inst.local_file_args))
+            stage_id = '%d' % stage_num
             plugin_name = proc_inst.plugin_name
             subdax_job = self.construct_plugin_subdax(stage_id, subdax_filepath, plugin_name=plugin_name, stage_refs_str=stage_refs_str, local_file_args_str=local_file_args_str)
             self.dax.addJob(subdax_job)
 
             # add dependency on mkdir job
-            self.dax.depends(parent=make_stage_data_dir,child=subdax_job)
+            self.dax.depends(parent=stage_mkdir_job,child=subdax_job)
                                 
             # add job executing sub-workflow to DAX
             subdax_exec_job = DAX(subdax_filename)
@@ -325,8 +326,8 @@ class WorkflowBuilder:
             # update the leaf of the DAX to point to this job
             self.leaf_job = subdax_exec_job
 
-            except Exception as e:
-                raise GeoEDFError("Error constructing sub-workflow for plugin %s: %s" % (plugin_name,e))
+        except Exception as e:
+            raise GeoEDFError("Error constructing sub-workflow for stage %d: %s" % (stage_num,e))
                                                          
     # return job constructing subdax for a given workflow stage plugin
     # needs the workflow file, stage number, plugin ID (in case of connectors)
@@ -379,7 +380,7 @@ class WorkflowBuilder:
             # stage references as comma separated string
             # arg bindings to local files as JSON string
             # target site
-            subdax_build_job.addArguments(self.workflow_filename,workflow_stage,'None',plugin_name,subdax_filepath,self.job_dir,self.run_dir,'None',stage_refs_str,local_file_args_str,self.target)
+            subdax_build_job.addArguments(self.workflow_filename,workflow_stage,plugin_name,subdax_filepath,self.job_dir,self.run_dir,stage_refs_str,local_file_args_str,self.target)
             
             return subdax_build_job
 

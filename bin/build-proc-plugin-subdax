@@ -53,7 +53,7 @@ dax.addFile(workflow_dax_file)
 helper = WorkflowUtils()
 
 # process the local file arg bindings JSON
-if local_file_arg_binds != 'None':
+if local_file_binds_str != 'None':
     local_file_args_exist = True
     local_file_binds = json.loads(local_file_binds_str)
     
@@ -62,7 +62,7 @@ if local_file_arg_binds != 'None':
 
     local_files_needed = []
     for arg in local_file_args:
-        local_files_needed.append(local_file_arg_binds[arg])
+        local_files_needed.append(local_file_binds[arg])
 
     local_file_args_str = '%s' % local_file_args[0]
 
@@ -74,6 +74,7 @@ else:
 
 # if local file args exist, add input files to DAX
 local_dax_files = []
+other_local_dax_files = []
 if local_file_args_exist:
     for local_file in local_files_needed:
         local_file_fname = os.path.split(local_file)[1]
@@ -81,6 +82,24 @@ if local_file_args_exist:
         local_dax_file.addPFN(PFN("file://%s" % local_file,"local"))
         dax.addFile(local_dax_file)
         local_dax_files.append(local_dax_file)
+        # special handling for shapefiles; also add other related files (dbf,shx,prj, etc.)
+        # check if shapefile
+        local_file_ext = os.path.splitext(local_file_fname)[1]
+        if local_file_ext == '.shp':
+            # find all other files with same basename
+            basename = os.path.splitext(local_file_fname)[0]
+            # assumes fully qualified path provided
+            local_file_dir = os.path.split(local_file)[0]
+            for local_dir_file in os.listdir(local_file_dir):
+                full_path = '%s/%s' % (local_file_dir,local_dir_file)
+                if os.path.isfile(full_path):
+                    local_dir_file_ext = os.path.splitext(local_dir_file)[1]
+                    if local_dir_file.startswith(basename) and local_dir_file_ext != '.shp':
+                        # add these also to DAX as inputs
+                        other_local_dax_file = File(local_dir_file)
+                        other_local_dax_file.addPFN(PFN("file://%s" % full_path, "local"))
+                        dax.addFile(other_local_dax_file)
+                        other_local_dax_files.append(other_local_dax_file)
 
 # extract the workflow stage
 with open(workflow_filename,'r') as workflow_file:
@@ -101,7 +120,7 @@ with open(workflow_filename,'r') as workflow_file:
             stage_ref_values = dict()
             for stage_ref in stage_refs:
                 stage_ref_values[stage_ref] = []
-                stage_ref_val_filename = '%s/outputs/results_%s.txt' % (run_dir,workflow_stage)
+                stage_ref_val_filename = '%s/outputs/results_%s.txt' % (run_dir,stage_ref)
                 with open (stage_ref_val_filename,'r') as stage_ref_val_file:
                     for val in stage_ref_val_file:
                         stage_ref_values[stage_ref].append(val.rstrip())
@@ -146,6 +165,10 @@ with open(workflow_filename,'r') as workflow_file:
 
                 for local_dax_file in local_dax_files:
                     plugin_job.addArguments(local_dax_file)
+                    plugin_job.uses(local_dax_file, link=Link.INPUT)
+                    
+                for other_local_dax_file in other_local_dax_files:
+                    plugin_job.uses(other_local_dax_file, link=Link.INPUT)
                     
                 dax.addJob(plugin_job)
                 plugin_jobs.append(plugin_job)
@@ -186,6 +209,10 @@ with open(workflow_filename,'r') as workflow_file:
 
             for local_dax_file in local_dax_files:
                 plugin_job.addArguments(local_dax_file)
+                plugin_job.uses(local_dax_file, link=Link.INPUT)
+                    
+            for other_local_dax_file in other_local_dax_files:
+                plugin_job.uses(other_local_dax_file, link=Link.INPUT)
                     
             dax.addJob(plugin_job)
             plugin_jobs.append(plugin_job)

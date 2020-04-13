@@ -49,7 +49,7 @@ class GeoEDFProcessor:
 
         # set actual processor definition
         self.plugin_name = proc_names[0] # this is needed to determine workflow executable names
-        self.proc_def = self.__def_dict[plugin_name]
+        self.proc_def = self.__def_dict[self.plugin_name]
         
         plugin_params = self.proc_def.keys()
         
@@ -57,7 +57,7 @@ class GeoEDFProcessor:
         if len(plugin_params) != len(list(set(plugin_params))):
             raise GeoEDFError('Parameters can only be bound once in a plugin')
         for plugin_param in plugin_params:
-            param_val = def_dict[plugin_param]
+            param_val = self.proc_def[plugin_param]
             if param_val is None:
                 raise GeoEDFError('Parameter must have a binding if included in definition: %s' % plugin_param)
             # disallow variables in the binding

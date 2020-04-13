@@ -135,15 +135,15 @@ class WorkflowUtils:
     def is_local_file(self,val_str):
         if '.' in val_str or '/' in val_str: # hardcoded path separator
             if os.path.isfile(val_str):
-                return true
-        return false
+                return True
+        return False
 
     # collects args bound to local files
     def collect_local_file_bindings(self,plugin_def):
         file_binds = dict()
         for arg in plugin_def.keys():
             val = plugin_def[arg]
-            if isinstance(val,str) and is_local_file(val): #lazy eval
+            if isinstance(val,str) and self.is_local_file(val): #lazy eval
                 file_binds[arg] = val
         return file_binds
 
