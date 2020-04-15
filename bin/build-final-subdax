@@ -1,0 +1,58 @@
+#!/usr/bin/env python2
+
+# builds a Pegasus subdax to get the final outputs and save as XML file
+
+import sys
+import os
+
+sys.path.append('/usr/lib/python2.7/dist-packages')
+
+from Pegasus.DAX3 import *
+
+# process command line arguments:
+# num stages
+# subdax filepath
+# remote job directory (prefix)
+# run directory
+# target site
+
+# basic validation on number of args
+if len(sys.argv) < 5:
+    raise Exception("Insufficient arguments to final subdax construction job")
+
+# extract the args
+num_stages = str(sys.argv[1])
+subdax_filename = str(sys.argv[2])
+job_dir = str(sys.argv[3])
+run_dir = str(sys.argv[4])
+target = str(sys.argv[5])
+
+# initialize DAX, set up some basic executables
+dax = ADAG("final-stage")
+
+# figure out what files need to be transferred back
+final_output_files = []
+final_results_filename = "%s/outputs/results_%s.txt" % (run_dir,num_stages)
+with open(final_results_filename,'r') as final_results_file:
+    for line in final_results_file:
+        output_filename = line.rstrip()
+        output_fname = os.path.split(output_filename)[1]
+        # add these files to DAX
+        output_file = File(output_fname)
+        #output_file.addPFN(PFN(output_filename,target))
+        #output_file.addPFN(PFN("file://%s/outputs/%s" % (run_dir,output_filename),"local"))
+        dax.addFile(output_file)
+        final_output_files.append(output_file)
+
+# create dummy final job with these outputs
+final_job = Job(name="move")
+final_job.addArguments("%s/%s/*" % (job_dir,num_stages),".")
+for output_file in final_output_files:
+    final_job.uses(output_file, link=Link.OUTPUT)
+
+dax.addJob(final_job)
+
+# write out to DAX xml file
+with open(subdax_filename,'w') as subdax_file:
+    dax.writeXML(subdax_file)
+

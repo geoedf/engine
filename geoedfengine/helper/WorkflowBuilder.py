@@ -108,11 +108,28 @@ class WorkflowBuilder:
 
         self.tc.add(build_proc_plugin_subdax)
 
+        # executable to build final subdax that simply returns outputs
+        build_final_subdax = Executable(name="build_final_subdax", arch="x86_64", installed=False)
+        final_builder_path = self.helper.find_exec_path("build-final-subdax")
+        build_final_subdax.addPFN(PFN("file://%s" % final_builder_path,"local"))
+
+        self.tc.add(build_final_subdax)
+
         # create an executable for making directories for each workflow stage
         # needs to be at object-level since we need to use the target for the PFN
         mkdir = Executable(name="mkdir", arch="x86_64", installed=True)
         mkdir.addPFN(PFN("/bin/mkdir",self.target))
         self.tc.add(mkdir)
+
+        # executable for final job that moves files to running dir so they can be returned
+        move = Executable(name="move", arch="x86_64", installed=True)
+        move.addPFN(PFN("/bin/mv",self.target))
+        self.tc.add(move)
+
+        # dummy executable for final job
+        dummy = Executable(name="dummy", arch="x86_64", installed=True)
+        dummy.addPFN(PFN("/bin/true",self.target))
+        self.tc.add(dummy)
 
         # build the site catalog
         self.sc = SitesCatalog(workflow_dir=self.run_dir)
@@ -176,6 +193,9 @@ class WorkflowBuilder:
                 self.construct_conn_subdax(curr_stage,workflow_stage,make_stage_data_dir)
             else:
                 self.construct_proc_subdax(curr_stage,workflow_stage,make_stage_data_dir)
+
+        # finally get the outputs back from the last stage
+        self.construct_final_subdax(num_stages)
 
     # constructs the subdax and its executor job for a connector in the workflow
     def construct_conn_subdax(self,stage_num,workflow_stage,stage_mkdir_job):
@@ -328,7 +348,54 @@ class WorkflowBuilder:
 
         except Exception as e:
             raise GeoEDFError("Error constructing sub-workflow for stage %d: %s" % (stage_num,e))
+
+    # constructs the subdax and its executor job for a final job that returns outputs
+    def construct_final_subdax(self,num_stages):
+
+        num_stages_str = '%d' % num_stages
+        
+        subdax_filename = 'final.xml'
+
+        # add subdax file to DAX
+        subdax_file = File(subdax_filename)
+        subdax_filepath = '%s/%s' % (self.run_dir, subdax_filename)
+        subdax_file.addPFN(PFN("file://%s" % subdax_filepath, "local"))
+        self.dax.addFile(subdax_file)
+
+        # construct subdax for this final job, then create a job to execute this subdax
+        try:
+            # job constructing final subdax
+            subdax_build_job = Job(name="build_final_subdax")
+            subdax_build_job.addProfile(Profile("hints", "execution.site", "local"))
+
+            # job arguments:
+            # num stages
+            # subdax filepath
+            # remote job directory
+            # run directory
+            # target site
+            subdax_build_job.addArguments(num_stages_str,subdax_filepath,self.job_dir,self.run_dir,self.target)
+            self.dax.addJob(subdax_build_job)
+            
+            # add dependency on current leaf job
+            self.dax.depends(parent=self.leaf_job,child=subdax_build_job)
+                                
+            # add job executing sub-workflow to DAX
+            subdax_exec_job = DAX(subdax_filename)
+            subdax_exec_job.addArguments("-Dpegasus.catalog.site.file=/usr/local/data/sites.xml",
+                                         "-Dpegasus.integrity.checking=none",
+                                         "--sites",self.target,
+                                         "--output-site","local",
+                                         "--basename","final")
+            subdax_exec_job.uses(subdax_file, link=Link.INPUT)
+            self.dax.addDAX(subdax_exec_job)
+            # add dependency between job building subdax and job executing it
+            self.dax.depends(parent=subdax_build_job, child=subdax_exec_job)
+
+        except Exception as e:
+            raise GeoEDFError("Error constructing sub-workflow for final stage: %s" % e)
                                                          
+        
     # return job constructing subdax for a given workflow stage plugin
     # needs the workflow file, stage number, plugin ID (in case of connectors)
     # file to store subdax XML in
@@ -383,4 +450,7 @@ class WorkflowBuilder:
             subdax_build_job.addArguments(self.workflow_filename,workflow_stage,plugin_name,subdax_filepath,self.job_dir,self.run_dir,stage_refs_str,local_file_args_str,self.target)
             
             return subdax_build_job
+
+            
+            
 

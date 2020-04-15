@@ -13,7 +13,7 @@ setup(name='geoedfengine',
       license='MIT',
       python_requires='~=2.7',
       packages=find_packages(),
-      scripts=['bin/build-conn-plugin-subdax','bin/build-proc-plugin-subdax'],
+      scripts=['bin/build-conn-plugin-subdax','bin/build-proc-plugin-subdax','bin/build-final-subdax'],
       install_requires=['pyyaml','regex'],
       include_package_data=True,
       zip_safe=False)

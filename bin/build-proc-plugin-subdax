@@ -217,7 +217,7 @@ with open(workflow_filename,'r') as workflow_file:
             dax.addJob(plugin_job)
             plugin_jobs.append(plugin_job)
 
-        #collect output file names
+        # collect output file names
         collect_job = Job(name="collect.py")
         output_dir = '%s/%s' % (job_dir,workflow_stage)
         collect_job.addArguments(workflow_stage)
