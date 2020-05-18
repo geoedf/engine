@@ -10,6 +10,7 @@
 import sys
 import os
 import yaml
+from yaml import FullLoader
 import re
 import itertools
 import random
@@ -20,6 +21,7 @@ from Pegasus.jupyter.instance import *
 
 from .helper.GeoEDFError import GeoEDFError
 from .helper.WorkflowBuilder import WorkflowBuilder
+from .helper.WorkflowUtils import WorkflowUtils
 
 class GeoEDFWorkflow:
 
@@ -34,9 +36,13 @@ class GeoEDFWorkflow:
 
         # create a GeoEDF workflow object from the input file
         with open(def_filename,'r') as workflow_file:
-            self.workflow_dict = yaml.load(workflow_file)
+            self.workflow_dict = yaml.load(workflow_file,Loader=FullLoader)
 
-        # syntactic and semantic validation (2) ....
+        # syntactic validation ....
+        self.helper = WorkflowUtils()
+
+        # validate this workflow
+        self.helper.validate_workflow(self.workflow_dict)
 
         # after validation suceeds, create a builder for this workflow
         self.builder = WorkflowBuilder(def_filename,target)
@@ -54,6 +60,10 @@ class GeoEDFWorkflow:
     def execute(self):
         # get a workflow instance to execute
         self.instance = self.builder.get_workflow_instance()
+        # turn off integrity checking (for now)
+        # TODO: figure out why Pegasus is not returning checksum in metadata
+        # causes integrity checking to fail
+        self.instance.set_property('pegasus.integrity.checking','none')
         self.instance.run(site=self.target)
         self.instance.status(loop=True)
 

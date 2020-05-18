@@ -5,9 +5,16 @@
 import sys
 import os
 import yaml
+from yaml import FullLoader
 import json
 
-sys.path.append('/usr/lib/python2.7/dist-packages')
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import serialization
+
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import padding
+
+#sys.path.append('/usr/lib/python2.7/dist-packages')
 
 from Pegasus.DAX3 import *
 
@@ -23,6 +30,7 @@ from geoedfengine.helper.WorkflowUtils import WorkflowUtils
 # run directory
 # stage references as comma separated string
 # arg to local file bindings encoded as JSON string
+# sensitive arg bindings
 # target site
 
 # basic validation on number of args
@@ -38,7 +46,8 @@ job_dir = str(sys.argv[5])
 run_dir = str(sys.argv[6])
 stage_refs_str = str(sys.argv[7])
 local_file_binds_str = str(sys.argv[8])
-target = str(sys.argv[9])
+sensitive_arg_binds_str = str(sys.argv[9])
+target = str(sys.argv[10])
 
 # initialize DAX, set up some basic executables
 dax = ADAG("stage-%s-Processor" % workflow_stage)
@@ -101,10 +110,45 @@ if local_file_args_exist:
                         dax.addFile(other_local_dax_file)
                         other_local_dax_files.append(other_local_dax_file)
 
+# process sensitive arg bindings if any, encrypting them with the public key
+# create a new JSON dictionary with arg to encrypted value pairs
+if sensitive_arg_binds_str != 'None':
+    sensitive_arg_binds = json.loads(sensitive_arg_binds_str)
+    encrypted_arg_binds = dict()
+
+    # process these bindings, encrypting their value
+    workflow_pubkey_filename = '%s/output/public.pem' % run_dir
+
+    with open(workflow_pubkey_filename,'rb') as key_file:
+        public_key = serialization.load_pem_public_key(
+            key_file.read(),
+            backend=default_backend())
+
+        for arg in sensitive_arg_binds:
+            sensitive_val = sensitive_arg_binds[arg]
+            sensitive_val_bytes = bytes(sensitive_val,'utf-8')
+            encrypted_val = public_key.encrypt(
+                sensitive_val_bytes,
+                padding.OAEP(
+                    mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                    algorithm=hashes.SHA256(),
+                    label=None))
+
+            #base64 encode val so it can be transmitted via JSON
+            b64encoded_val = base64.encodestring(encrypted_val)
+            
+            encrypted_arg_binds[arg] = b64encoded_val.decode('ascii')
+            
+    encrypted_arg_binds_str = json.dumps(json.dumps(encrypted_arg_binds))
+
+else:
+    encrypted_arg_binds_str = 'None'
+    
+
 # extract the workflow stage
 with open(workflow_filename,'r') as workflow_file:
     try:
-        workflow_dict = yaml.load(workflow_file)
+        workflow_dict = yaml.load(workflow_file,Loader=FullLoader)
 
         stage_id = '$%s' % workflow_stage
 
@@ -149,6 +193,7 @@ with open(workflow_filename,'r') as workflow_file:
                 # plugin type
                 # output_path
                 # stage refs JSON str
+                # encrypted arg binds str
                 # local file args str
                 # optional trailing list of file args (local files converted to inputs)
                 plugin_job.addArguments(workflow_dax_file)
@@ -161,6 +206,7 @@ with open(workflow_filename,'r') as workflow_file:
                 plugin_job.addArguments(output_dir)
                 
                 plugin_job.addArguments(stage_binds_str)
+                plugin_job.addArguments(encrypted_arg_binds_str)
                 plugin_job.addArguments(local_file_args_str)
 
                 for local_dax_file in local_dax_files:
@@ -193,6 +239,7 @@ with open(workflow_filename,'r') as workflow_file:
             # plugin type
             # output_path
             # stage refs JSON str
+            # encrypted arg binds str
             # local file args str
             # optional trailing list of file args (local files converted to inputs)
             plugin_job.addArguments(workflow_dax_file)
@@ -205,6 +252,7 @@ with open(workflow_filename,'r') as workflow_file:
             plugin_job.addArguments(output_dir)
                 
             plugin_job.addArguments(stage_binds_str)
+            plugin_job.addArguments(encrypted_arg_binds_str)
             plugin_job.addArguments(local_file_args_str)
 
             for local_dax_file in local_dax_files:

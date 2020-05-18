@@ -12,6 +12,7 @@ import re
 import itertools
 import subprocess
 import time
+from getpass import getpass
 
 from .GeoEDFError import GeoEDFError
 
@@ -29,7 +30,9 @@ class WorkflowUtils:
             #which_proc = subprocess.call(["which",exec_name],stdout=subprocess.PIPE)
             #return which_proc.stdout.rstrip()
             ret = subprocess.check_output(["which",exec_name])
-            return str(ret).rstrip()
+            #PYTHON2=>3
+            return ret.decode('utf-8').rstrip()
+            #return str(ret).rstrip()
         except subprocess.CalledProcessError:
             raise GeoEDFError("Error occurred in finding the executable %s. This should not happen if the workflow engine was successfully installed!!!" % exec_name)
 
@@ -52,6 +55,21 @@ class WorkflowUtils:
             return full_path
         except subprocess.CalledProcessError:
             raise GeoEDFError("Error occurred in creating run directory for this workflow!!!")
+
+    # validate this workflow
+    # semantic validation occurs when processing each plugin
+    # this function only performs a cursory syntactic check
+    def validate_workflow(self,workflow_dict):
+        # ensure that workflow stages are numeric and in order
+        workflow_stages = list(workflow_dict.keys())
+
+        # find number of stages; each $n needs to be present
+        num_stages = len(workflow_stages)
+
+        for stage_num in range(1,num_stages+1):
+            stage_id = '$%d' % stage_num
+            if stage_id not in workflow_stages:
+                raise GeoEDFError('Workflow stages need to be in numeric order and of the form $n')
 
     # parses a string to find the mentioned variables: %{var}
     def find_dependent_vars(self,value):
@@ -124,10 +142,12 @@ class WorkflowUtils:
     # collects stage references in a plugin instance
     def collect_stage_refs(self,plugin_def):
         refs = []
-        for arg in plugin_def.keys():
-            val = plugin_def[arg]
-            val_stage_refs = self.find_stage_refs(val)
-            refs = list(set(refs).union(set(val_stage_refs)))
+        for plugin_class in plugin_def.keys():
+            plugin_inst = plugin_def[plugin_class]
+            for arg in plugin_inst.keys():
+                val = plugin_inst[arg]
+                val_stage_refs = self.find_stage_refs(val)
+                refs = list(set(refs).union(set(val_stage_refs)))
         return refs
 
     # uses naive identification of local files - either has an extension or / separator
@@ -141,11 +161,27 @@ class WorkflowUtils:
     # collects args bound to local files
     def collect_local_file_bindings(self,plugin_def):
         file_binds = dict()
-        for arg in plugin_def.keys():
-            val = plugin_def[arg]
-            if isinstance(val,str) and self.is_local_file(val): #lazy eval
-                file_binds[arg] = val
+        for plugin_class in plugin_def.keys():
+            plugin_inst = plugin_def[plugin_class]
+            for arg in plugin_inst.keys():
+                val = plugin_inst[arg]
+                if isinstance(val,str) and self.is_local_file(val): #lazy eval
+                    file_binds[arg] = val
         return file_binds
+
+    # collects args with empty bindings
+    def collect_empty_bindings(self,plugin_def):
+        empty_args = []
+        for plugin_class in plugin_def.keys():
+            plugin_inst = plugin_def[plugin_class]
+            for arg in plugin_inst.keys():
+                val = plugin_inst[arg]
+                if val is None:
+                    empty_args.append(arg)
+                else:
+                    if isinstance(val,str) and (len(val) == 0):
+                        empty_args.append(arg)
+        return empty_args
 
     # converts a list into a comma separated string
     def list_to_str(self,val_list):
@@ -216,6 +252,18 @@ class WorkflowUtils:
                     dict1_inst[keys1[indx]] = comb_pair[indx]
                 binding_combs.append(dict1_inst)
             return binding_combs
+
+    # function that prompts the user for values for sensitive args
+    # returns a JSON with arg-value bindings
+    # uses stage_num, plugin_name to assist user
+    def collect_sensitive_arg_binds(self,stage_num,plugin_name,args):
+        arg_binds = dict()
+        plugin_prompt = 'plugin %s in workflow stage %d' % (plugin_name,stage_num)
+        for arg in args:
+            arg_prompt = 'Enter value for %s in %s: ' % (arg,plugin_prompt)
+            arg_binds[arg] = getpass(prompt=arg_prompt)
+        return arg_binds
+            
             
             
             

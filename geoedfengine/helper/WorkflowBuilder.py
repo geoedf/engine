@@ -10,6 +10,7 @@
 import sys
 import os
 import yaml
+from yaml import FullLoader
 import json
 import re
 
@@ -33,7 +34,7 @@ class WorkflowBuilder:
 
     def __init__(self,workflow_filename,target='local'):
         with open(workflow_filename,'r') as workflow_file:
-            self.workflow_dict = yaml.load(workflow_file)
+            self.workflow_dict = yaml.load(workflow_file,Loader=FullLoader)
         self.workflow_filename = workflow_filename
         self.target = target
 
@@ -68,8 +69,8 @@ class WorkflowBuilder:
         self.tc = TransformationCatalog(workflow_dir=self.run_dir)
 
         # add the connector container to the DAX-level TC
-        # conn_container = Container("geoedf-connector",type="singularity",image="shub://rkalyanapurdue/geoedf-connector:latest",mount=["%s:/data/%s" % (self.job_dir,self.workflow_id)])
-        conn_container = Container("geoedf-connector",type="singularity",image="library://rkalyana/default/geoedf",mount=["%s:/data/%s" % (self.job_dir,self.workflow_id)])
+        conn_container = Container("geoedf-connector",type="singularity",image="library://rkalyanapurdue/connectors/geoedf:latest",mount=["%s:/data/%s" % (self.job_dir,self.workflow_id)])
+        #conn_container = Container("geoedf-connector",type="singularity",image="library://rkalyana/default/geoedf:latest",mount=["%s:/data/%s" % (self.job_dir,self.workflow_id)])
         self.tc.add_container(conn_container)
         
         # create and add executables for running connector plugins
@@ -86,8 +87,15 @@ class WorkflowBuilder:
         collect_input_out_exec.addPFN(PFN("/usr/local/bin/collect.py",self.target))
         self.tc.add(collect_input_out_exec)
 
+        # create an executable for generating a public-private key pair
+        # this is provided by the framework and will be run in the connector container
+        gen_keypair_exec = Executable(name="gen_keypair", installed=True, container=conn_container)
+        gen_keypair_exec.addPFN(PFN("/usr/local/bin/gen-keypair.py",self.target))
+        self.tc.add(gen_keypair_exec)
+
         # parse processor registry and add processor containers and executables to the DAX-level TC
-        hdfeosshapefilemask_cont = Container("geoedf-hdfeosshapefilemask",type="singularity",image="library://rkalyana/default/geoedf-hdfeosshapefilemask",mount=["%s:/data/%s" % (self.job_dir,self.workflow_id)])
+        hdfeosshapefilemask_cont = Container("geoedf-hdfeosshapefilemask",type="singularity",image="library://rkalyanapurdue/processors/hdfeosshapefilemask:latest",mount=["%s:/data/%s" % (self.job_dir,self.workflow_id)])
+        #hdfeosshapefilemask_cont = Container("geoedf-hdfeosshapefilemask",type="singularity",image="library://rkalyana/default/geoedf-hdfeosshapefilemask",mount=["%s:/data/%s" % (self.job_dir,self.workflow_id)])
         self.tc.add_container(hdfeosshapefilemask_cont)
         hdfeosshapefilemask_exec = Executable("run-processor-hdfeosshapefilemask",installed=True,container=hdfeosshapefilemask_cont)
         hdfeosshapefilemask_exec.addPFN(PFN("/usr/local/bin/run-workflow-stage.sh",self.target))
@@ -161,6 +169,29 @@ class WorkflowBuilder:
 
         num_stages = len(self.workflow_dict)
 
+        # create a initial job for making a jobdir
+        make_workflow_data_dir = Job("mkdir")
+        make_workflow_data_dir.addArguments("-p",self.job_dir)
+        self.dax.addJob(make_workflow_data_dir)
+
+        # create a job for generating a new public-private key pair on the target site
+        # provide workflow_id as keypair filename prefix
+        gen_keypair_job = Job("gen_keypair")
+        gen_keypair_job.addArguments(self.job_dir)
+
+        # set the output file so the public key is returned here for future encryption
+        public_key_filename = 'public.pem'
+        self.pubkey_file = File(public_key_filename)
+        self.dax.addFile(self.pubkey_file)
+        gen_keypair_job.uses(self.pubkey_file, link=Link.OUTPUT)
+        
+        self.dax.addJob(gen_keypair_job)
+
+        # add a dependency
+        self.dax.depends(parent=make_workflow_data_dir,child=gen_keypair_job)
+
+        self.leaf_job = gen_keypair_job
+
         for curr_stage in range(1,num_stages+1):
 
             stage_data_dir = "%s/%d" % (self.job_dir,curr_stage)
@@ -201,11 +232,14 @@ class WorkflowBuilder:
     def construct_conn_subdax(self,stage_num,workflow_stage,stage_mkdir_job):
         # instantiate GeoEDFConnector object which performs validation
         # and identifies dependency chain
-        conn_inst = GeoEDFConnector(workflow_stage)
+        conn_inst = GeoEDFConnector(workflow_stage,stage_num)
 
         # then loop through plugins, creating subdax for any that are fully
         # bound, until all plugins have been run
-        plugins = conn_inst.plugin_dependencies.keys()
+
+        #PYTHON2=>3
+        #plugins = conn_inst.plugin_dependencies.keys()
+        plugins = list(conn_inst.plugin_dependencies.keys())
 
         # dictionary of jobs keyed by plugin id to set up dependencies
         plugin_jobs = dict()
@@ -231,6 +265,15 @@ class WorkflowBuilder:
             
                 # plugin can be executed, create a subdax for this plugin
                 plugins_done.append(plugin_id)
+
+                # if this plugin has any sensitive args, prompt the user for values
+                # gets a JSON back
+                plugin_sensitive_args = conn_inst.sensitive_args[plugin_id]
+                if len(plugin_sensitive_args) > 0:
+                    sensitive_arg_binds = self.helper.collect_sensitive_arg_binds(stage_num,conn_inst.plugin_names[plugin_id],plugin_sensitive_args)
+                    sensitive_arg_binds_str = json.dumps(json.dumps(sensitive_arg_binds))
+                else:
+                    sensitive_arg_binds_str = 'None'
 
                 # file to hold the subdax for this plugin
                 # if filter
@@ -260,7 +303,7 @@ class WorkflowBuilder:
                         local_file_args_str = json.dumps(json.dumps(conn_inst.local_file_args[plugin_id]))
                     stage_id = '%d' % stage_num
                     plugin_name = conn_inst.plugin_names[plugin_id]
-                    subdax_job = self.construct_plugin_subdax(stage_id, subdax_filepath, plugin_id, plugin_name, dep_vars_str, stage_refs_str,local_file_args_str)
+                    subdax_job = self.construct_plugin_subdax(stage_id, subdax_filepath, plugin_id, plugin_name, dep_vars_str, stage_refs_str,local_file_args_str, sensitive_arg_binds_str=sensitive_arg_binds_str)
                     self.dax.addJob(subdax_job)
 
                     # add dependencies; mkdir job and any var dependencies
@@ -325,7 +368,17 @@ class WorkflowBuilder:
                 local_file_args_str = json.dumps(json.dumps(proc_inst.local_file_args))
             stage_id = '%d' % stage_num
             plugin_name = proc_inst.plugin_name
-            subdax_job = self.construct_plugin_subdax(stage_id, subdax_filepath, plugin_name=plugin_name, stage_refs_str=stage_refs_str, local_file_args_str=local_file_args_str)
+
+            # if this plugin has any sensitive args, prompt the user for values
+            # gets a JSON back
+            plugin_sensitive_args = proc_inst.sensitive_args
+            if len(plugin_sensitive_args) > 0:
+                sensitive_arg_binds = self.helper.collect_sensitive_arg_binds(stage_num,plugin_name,plugin_sensitive_args)
+                sensitive_arg_binds_str = json.dumps(json.dumps(sensitive_arg_binds))
+            else:
+                sensitive_arg_binds_str = 'None'
+
+            subdax_job = self.construct_plugin_subdax(stage_id, subdax_filepath, plugin_name=plugin_name, stage_refs_str=stage_refs_str, local_file_args_str=local_file_args_str, sensitive_arg_binds_str=sensitive_arg_binds_str)
             self.dax.addJob(subdax_job)
 
             # add dependency on mkdir job
@@ -405,7 +458,7 @@ class WorkflowBuilder:
     # var dependencies encoded as comma separated string
     # stage references encoded as comma separated string
     # args bound to local files encoded as a JSON string of arg-filepath mappings
-    def construct_plugin_subdax(self,workflow_stage,subdax_filepath,plugin_id=None, plugin_name=None, var_deps_str=None,stage_refs_str=None,local_file_args_str=None):
+    def construct_plugin_subdax(self,workflow_stage,subdax_filepath,plugin_id=None, plugin_name=None, var_deps_str=None,stage_refs_str=None,local_file_args_str=None,sensitive_arg_binds_str=None):
 
         # construct subdax and save in subdax file
         # executable to be used differs based on whether we are
@@ -426,7 +479,7 @@ class WorkflowBuilder:
             # stage references as comma separated string
             # arg bindings to local files as JSON string
             # target site
-            subdax_build_job.addArguments(self.workflow_filename,workflow_stage,plugin_id,plugin_name,subdax_filepath,self.job_dir,self.run_dir,var_deps_str,stage_refs_str,local_file_args_str,self.target)
+            subdax_build_job.addArguments(self.workflow_filename,workflow_stage,plugin_id,plugin_name,subdax_filepath,self.job_dir,self.run_dir,var_deps_str,stage_refs_str,local_file_args_str,sensitive_arg_binds_str,self.target)
             
             return subdax_build_job
 
@@ -447,7 +500,7 @@ class WorkflowBuilder:
             # stage references as comma separated string
             # arg bindings to local files as JSON string
             # target site
-            subdax_build_job.addArguments(self.workflow_filename,workflow_stage,plugin_name,subdax_filepath,self.job_dir,self.run_dir,stage_refs_str,local_file_args_str,self.target)
+            subdax_build_job.addArguments(self.workflow_filename,workflow_stage,plugin_name,subdax_filepath,self.job_dir,self.run_dir,stage_refs_str,local_file_args_str,sensitive_arg_binds_str,self.target)
             
             return subdax_build_job
 

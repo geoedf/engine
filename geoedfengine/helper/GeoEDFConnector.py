@@ -21,7 +21,9 @@ class GeoEDFConnector:
     
     # takes a dictionary that is a connector piece of a workflow
     # assume def_dict is not None; has been checked before invoking
-    def __init__(self,def_dict):
+    # workflow_stage is an integer corresponding to the numerical index of
+    # this plugin in the workflow; used to validate stage references
+    def __init__(self,def_dict,workflow_stage):
 
         # get a helper
         self.helper = WorkflowUtils()
@@ -39,14 +41,23 @@ class GeoEDFConnector:
             self.stage_refs = dict()
             self.plugin_names = dict()
             self.local_file_args = dict()
+            self.sensitive_args = dict()
             # now determine the plugin dependencies (variables and stages)
             # used to drive execution order and construct bindings
             self.identify_plugin_dependencies()
+
+            # validate the stage references that have been extracted
+            self.validate_stage_refs(workflow_stage)
 
             # now determine args bound to local files
             # these files needs to be transferred as inputs
             # args need to be "rebound" to actual filepath on execution host
             self.identify_local_file_args()
+
+            # determine "sensitive" args, these have no binding
+            # user needs to be prompted to provide values for these args
+            # arg value needs to be encrypted before sending to the execution host
+            self.identify_sensitive_args()
         else:
             raise GeoEDFError('Connector fails validation!')
 
@@ -167,9 +178,19 @@ class GeoEDFConnector:
         else:
             raise GeoEDFError('Connector must have an Input definition')
 
+    # validate the stage references in the various plugins
+    # need to reference earlier workflow stages
+    def validate_stage_refs(self,workflow_stage):
+        for plugin in self.stage_refs.keys():
+            for stage_ref in self.stage_refs[plugin]:
+                stage_ref_num = int(stage_ref)
+                if not stage_ref_num < workflow_stage:
+                    raise GeoEDFError('Invalid stage reference $%d in workflow stage $%d' % (stage_ref_num,workflow_stage))
+
     # determine plugin dependencies (mainly variable-filter chains)
     # encode as a dictionary of dependencies, keyed by stage identifiers
     # also collect stage references and (class) names of plugins
+    # validate stage references using workflow_stage
     def identify_plugin_dependencies(self):
         # first identify the variable dependencies of each plugin
         # then convert to plugin dependencies
@@ -230,7 +251,6 @@ class GeoEDFConnector:
         input_def = self.__def_dict['Input']
 
         # what args are bound to local files in Input plugin
-        # encoded as a dictionary mapping arg to local filepath value
         self.local_file_args['Input'] = self.helper.collect_local_file_bindings(input_def)
 
         # do we have any filters?
@@ -244,4 +264,23 @@ class GeoEDFConnector:
                 # what args in Filter are bound to local files
                 self.local_file_args[filter_id] = self.helper.collect_local_file_bindings(filter_def)
 
-        
+    # determine args with an empty binding
+    # creates a dictionary mapping plugin ID to list of such args
+    def identify_sensitive_args(self):
+        input_def = self.__def_dict['Input']
+
+        # what args are left blank in the Input plugin
+        self.sensitive_args['Input'] = self.helper.collect_empty_bindings(input_def)
+
+        # do we have any filters?
+        if 'Filter' in self.__def_dict:
+            for filtered_param in self.__def_dict['Filter']:
+                filter_def = self.__def_dict['Filter'][filtered_param]
+
+                # construct Filter ID
+                filter_id = 'Filter:%s' % filtered_param
+
+                # what args in Filter are bound to local files
+                self.sensitive_args[filter_id] = self.helper.collect_empty_bindings(filter_def)
+
+            

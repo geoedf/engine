@@ -21,7 +21,8 @@ class GeoEDFProcessor:
     
     # takes a dictionary that is a processor piece of a workflow
     # assume def_dict is not None; has been checked before invoking
-    def __init__(self,def_dict):
+    # workflow_stage is the index of this plugin in the workflow; used to validate stage references
+    def __init__(self,def_dict,workflow_stage):
 
         # get a helper
         self.helper = WorkflowUtils()
@@ -33,8 +34,11 @@ class GeoEDFProcessor:
         # will raise an exception if this fails
         if self.validate_definition():
             # now determine the prior workflow stage references and args bound to local files
-            self.stage_refs = self.helper.collect_stage_refs(self.proc_def)
-            self.local_file_args = self.helper.collect_local_file_bindings(self.proc_def)
+            self.stage_refs = self.helper.collect_stage_refs(self.__def_dict)
+            # validate stage references
+            self.validate_stage_refs(workflow_stage)
+            self.local_file_args = self.helper.collect_local_file_bindings(self.__def_dict)
+            self.sensitive_args = self.helper.collect_empty_bindings(self.__def_dict)
         else:
             raise GeoEDFError('Processor fails validation!')
 
@@ -43,7 +47,9 @@ class GeoEDFProcessor:
     # if a binding references a stage then it can only have zero or more dir modifiers in its value
     def validate_definition(self):
         # first check to make sure only one processor exists in this stage
-        proc_names = self.__def_dict.keys()
+        #PYTHON2=>3
+        #proc_names = self.__def_dict.keys()
+        proc_names = list(self.__def_dict.keys())
         if len(proc_names) > 1:
             raise GeoEDFError("Exactly one processor can make up a workflow stage")
 
@@ -69,3 +75,12 @@ class GeoEDFProcessor:
             self.helper.validate_stage_refs(param_val)
             
         return True
+
+    #validate stage references ensuring that they are earlier than current workflow stage
+    def validate_stage_refs(self,workflow_stage):
+        for stage_ref in self.stage_refs:
+            stage_ref_num = int(stage_ref)
+            if not stage_ref_num < workflow_stage:
+                raise GeoEDFError('Invalid stage reference $%d in workflow stage $%d' % (stage_ref_num,workflow_stage))
+
+            
