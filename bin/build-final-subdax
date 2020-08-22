@@ -32,7 +32,7 @@ dax = ADAG("final-stage")
 
 # figure out what files need to be transferred back
 final_output_files = []
-final_results_filename = "%s/outputs/results_%s.txt" % (run_dir,num_stages)
+final_results_filename = "%s/output/results_%s.txt" % (run_dir,num_stages)
 with open(final_results_filename,'r') as final_results_file:
     for line in final_results_file:
         output_filename = line.rstrip()

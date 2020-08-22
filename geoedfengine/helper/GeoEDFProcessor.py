@@ -39,6 +39,7 @@ class GeoEDFProcessor:
             self.validate_stage_refs(workflow_stage)
             self.local_file_args = self.helper.collect_local_file_bindings(self.__def_dict)
             self.sensitive_args = self.helper.collect_empty_bindings(self.__def_dict)
+            self.dir_modified_refs = self.helper.collect_dir_modified_refs(self.__def_dict)
         else:
             raise GeoEDFError('Processor fails validation!')
 

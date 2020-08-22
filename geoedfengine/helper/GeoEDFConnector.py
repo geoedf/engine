@@ -42,6 +42,7 @@ class GeoEDFConnector:
             self.plugin_names = dict()
             self.local_file_args = dict()
             self.sensitive_args = dict()
+            self.dir_modified_refs = dict()
             # now determine the plugin dependencies (variables and stages)
             # used to drive execution order and construct bindings
             self.identify_plugin_dependencies()
@@ -58,6 +59,10 @@ class GeoEDFConnector:
             # user needs to be prompted to provide values for these args
             # arg value needs to be encrypted before sending to the execution host
             self.identify_sensitive_args()
+
+            # determine args that have dir modifiers applied to their values
+            # when executing the plugin, only one binding needs to be provided for these args
+            self.identify_dir_modified_args()
         else:
             raise GeoEDFError('Connector fails validation!')
 
@@ -282,5 +287,24 @@ class GeoEDFConnector:
 
                 # what args in Filter are bound to local files
                 self.sensitive_args[filter_id] = self.helper.collect_empty_bindings(filter_def)
+
+    # determine stage references with dir modifier applied to them
+    # creates a dictionary mapping plugin ID to list of such stage refs
+    def identify_dir_modified_args(self):
+        input_def = self.__def_dict['Input']
+
+        # what refs have dir modifiers applied to them
+        self.dir_modified_refs['Input'] = self.helper.collect_dir_modified_refs(input_def)
+
+        # do we have any filters?
+        if 'Filter' in self.__def_dict:
+            for filtered_param in self.__def_dict['Filter']:
+                filter_def = self.__def_dict['Filter'][filtered_param]
+
+                # construct Filter ID
+                filter_id = 'Filter:%s' % filtered_param
+
+                # what args in Filter have dir modifiers in value
+                self.dir_modified_refs[filter_id] = self.helper.collect_dir_modified_refs(filter_def)
 
             

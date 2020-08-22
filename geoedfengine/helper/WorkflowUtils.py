@@ -14,6 +14,11 @@ import subprocess
 import time
 from getpass import getpass
 
+os.environ['SREGISTRY_CLIENT'] = 'registry'
+os.environ['SREGISTRY_REGISTRY_BASE'] = 'https://www.registry.geoedf.org'
+
+from sregistry.main import get_client
+
 from .GeoEDFError import GeoEDFError
 
 class WorkflowUtils:
@@ -42,6 +47,8 @@ class WorkflowUtils:
             return '/data/%s' % self.workflow_id
         elif target == 'condorpool':
             return '/data/%s' % self.workflow_id
+        elif target == 'brown':
+            return '/scratch/brown/rkalyana/pegasus/%s' % self.workflow_id
 
     # create a run directory for this workflow
     def create_run_dir(self):
@@ -150,6 +157,21 @@ class WorkflowUtils:
                 refs = list(set(refs).union(set(val_stage_refs)))
         return refs
 
+    # collect the stage references who have a dir modifier applied
+    # in this plugin's bindings
+    def collect_dir_modified_refs(self, plugin_def):
+        dir_mod_refs = []
+        for plugin_class in plugin_def.keys():
+            plugin_inst = plugin_def[plugin_class]
+            for arg in plugin_inst.keys():
+                val = plugin_inst[arg]
+                if val is not None and isinstance(val,str):
+                    if val.startswith('dir('):
+                        # find the stage references in this value
+                        val_stage_refs = self.find_stage_refs(val)
+                        dir_mod_refs = list(set(dir_mod_refs).union(set(val_stage_refs)))
+        return dir_mod_refs
+
     # uses naive identification of local files - either has an extension or / separator
     # checks to see if these are actually files on this host and add to dictionary
     def is_local_file(self,val_str):
@@ -214,7 +236,11 @@ class WorkflowUtils:
             # get a cross product of the 2nd dictionary
             dict2_vals = []
             for key in keys2:
-                dict2_vals.append(dict2[key])
+                # if key is to be overridden, modify values
+                if key in dict2_unary_keys:
+                    dict2_vals.append([dict2[key][0]])
+                else:
+                    dict2_vals.append(dict2[key])
 
             dict2_combs = list(itertools.product(*list(dict2_vals)))
 
@@ -263,6 +289,33 @@ class WorkflowUtils:
             arg_prompt = 'Enter value for %s in %s: ' % (arg,plugin_prompt)
             arg_binds[arg] = getpass(prompt=arg_prompt)
         return arg_binds
+
+    # function that queries the Singularity registry server for containers
+    # in the connector and processor collections
+    # returns names and URI in separate dictionaries
+    def get_registry_containers(self):
+        cli = get_client(quiet=True)
+
+        conns = dict()
+        query_res = cli.search("connectors")
+        for (cont_uri,url) in query_res:
+            cont_path = cont_uri.split(':')[0]
+            plugin_name = cont_path.split('/')[1]
+            if plugin_name not in conns:
+                conns[plugin_name] = cont_uri
+
+        procs = dict()
+        query_res = cli.search("processors")
+        for (cont_uri,url) in query_res:
+            cont_path = cont_uri.split(':')[0]
+            plugin_name = cont_path.split('/')[1]
+            if plugin_name not in procs:
+                procs[plugin_name] = cont_uri
+
+        return (conns,procs)
+           
+
+       
             
             
             

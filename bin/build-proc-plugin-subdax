@@ -31,10 +31,11 @@ from geoedfengine.helper.WorkflowUtils import WorkflowUtils
 # stage references as comma separated string
 # arg to local file bindings encoded as JSON string
 # sensitive arg bindings
+# stage references that have dir modifier applied to them
 # target site
 
 # basic validation on number of args
-if len(sys.argv) < 9:
+if len(sys.argv) < 10:
     raise Exception("Insufficient arguments to processor plugin subdax construction job")
 
 # extract the args
@@ -47,7 +48,8 @@ run_dir = str(sys.argv[6])
 stage_refs_str = str(sys.argv[7])
 local_file_binds_str = str(sys.argv[8])
 sensitive_arg_binds_str = str(sys.argv[9])
-target = str(sys.argv[10])
+dir_mod_refs_str = str(sys.argv[10])
+target = str(sys.argv[11])
 
 # initialize DAX, set up some basic executables
 dax = ADAG("stage-%s-Processor" % workflow_stage)
@@ -143,7 +145,12 @@ if sensitive_arg_binds_str != 'None':
 
 else:
     encrypted_arg_binds_str = 'None'
-    
+
+# process stage references with dir modifier
+if dir_mod_refs_str != 'None':
+    dir_modified_refs = dir_mod_refs_str.split(',')
+else:
+    dir_modified_refs = []
 
 # extract the workflow stage
 with open(workflow_filename,'r') as workflow_file:
@@ -164,10 +171,13 @@ with open(workflow_filename,'r') as workflow_file:
             stage_ref_values = dict()
             for stage_ref in stage_refs:
                 stage_ref_values[stage_ref] = []
-                stage_ref_val_filename = '%s/outputs/results_%s.txt' % (run_dir,stage_ref)
+                stage_ref_val_filename = '%s/output/results_%s.txt' % (run_dir,stage_ref)
                 with open (stage_ref_val_filename,'r') as stage_ref_val_file:
                     for val in stage_ref_val_file:
                         stage_ref_values[stage_ref].append(val.rstrip())
+                # if this stage ref has a dir modifier applied to it, only retain one value
+                if stage_ref in dir_modified_refs:
+                    stage_ref_values[stage_ref] = stage_ref_values[stage_ref][:1]
 
         # if stage refs exist, build binding combinations and corresponding parallel jobs
         if stage_refs_exist:
@@ -184,7 +194,7 @@ with open(workflow_filename,'r') as workflow_file:
                 # create job for this plugin
                 # executable name is different for each proc since
                 # it needs to be run in the processor's own container
-                exec_name = "run-processor-%s" % plugin_name.lower()
+                exec_name = "run-processor-plugin-%s" % plugin_name.lower()
                 plugin_job = Job(name=exec_name)
 
                 # args:
@@ -230,7 +240,7 @@ with open(workflow_filename,'r') as workflow_file:
             # create job for this plugin
             # executable name is different for each proc since
             # it needs to be run in the processor's own container
-            exec_name = "run-processor-%s" % plugin_name.lower()
+            exec_name = "run-processor-plugin-%s" % plugin_name.lower()
             plugin_job = Job(name=exec_name)
 
             # args:

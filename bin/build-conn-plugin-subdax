@@ -33,25 +33,27 @@ from geoedfengine.helper.WorkflowUtils import WorkflowUtils
 # stage references as comma separated string
 # arg to local file bindings encoded as JSON string
 # sensitive arg bindings
+# stage references with dir modifier applied to them
 # target site
 
 # basic validation on number of args; additional ones for connector
-if len(sys.argv) < 11:
+if len(sys.argv) < 12:
     raise Exception("Insufficient arguments to connector plugin subdax construction job")
 
 # extract the args
 workflow_filename = str(sys.argv[1])
 workflow_stage = str(sys.argv[2])
 plugin_id = str(sys.argv[3])
-plugin_name = str(sys.argv[4]).lower()
+plugin_name = str(sys.argv[4])
 subdax_filename = str(sys.argv[5])
 job_dir = str(sys.argv[6])
 run_dir = str(sys.argv[7])
 dep_vars_str = str(sys.argv[8])
 stage_refs_str = str(sys.argv[9])
 local_file_binds_str = str(sys.argv[10])
-sensitive_arg_binds_str=  str(sys.argv[11])
-target = str(sys.argv[12])
+sensitive_arg_binds_str =  str(sys.argv[11])
+dir_mod_refs_str = str(sys.argv[12])
+target = str(sys.argv[13])
 
 filter_var = ''
 
@@ -139,6 +141,13 @@ if sensitive_arg_binds_str != 'None':
 
 else:
     encrypted_arg_binds_str = 'None'
+
+# process stage references that have dir modifiers applied
+# these references need to be bound only once
+if dir_mod_refs_str != 'None':
+    dir_modified_refs = dir_mod_refs_str.split(',')
+else:
+    dir_modified_refs = []
     
 # extract the workflow stage
 with open(workflow_filename,'r') as workflow_file:
@@ -161,7 +170,7 @@ with open(workflow_filename,'r') as workflow_file:
 
             for var in dep_vars:
                 dep_var_values[var] = []
-                var_val_filename = '%s/outputs/results_%s_%s.txt' % (run_dir,workflow_stage,var)
+                var_val_filename = '%s/output/results_%s_%s.txt' % (run_dir,workflow_stage,var)
                 with open(var_val_filename,'r') as var_val_file:
                     for val in var_val_file:
                         # strip trailing newline
@@ -173,10 +182,14 @@ with open(workflow_filename,'r') as workflow_file:
             stage_ref_values = dict()
             for stage_ref in stage_refs:
                 stage_ref_values[stage_ref] = []
-                stage_ref_val_filename = '%s/outputs/results_%s.txt' % (run_dir,stage_ref)
+                stage_ref_val_filename = '%s/output/results_%s.txt' % (run_dir,stage_ref)
                 with open (stage_ref_val_filename,'r') as stage_ref_val_file:
                     for val in stage_ref_val_file:
                         stage_ref_values[stage_ref].append(val.rstrip())
+                # if this stage ref has a dir modifier applied to it, only retain one value
+                if stage_ref in dir_modified_refs:
+                    stage_ref_values[stage_ref] = stage_ref_values[stage_ref][:1]
+                            
 
         # create binding combos from the values and stage refs
         if dep_vars_exist and stage_refs_exist:
@@ -203,7 +216,8 @@ with open(workflow_filename,'r') as workflow_file:
                     dax.addFile(res_file)
 
                 # create job for this plugin
-                plugin_job = Job(name="run-connector-plugin")
+                exec_name = "run-connector-plugin-%s" % plugin_name.lower()
+                plugin_job = Job(name=exec_name)
 
                 # args:
                 # workflow_file
@@ -227,9 +241,6 @@ with open(workflow_filename,'r') as workflow_file:
                     output_dir = '%s/%s' % (job_dir,workflow_stage)
                     plugin_job.addArguments(output_dir)
 
-                # plugin name as Conda environment name
-                plugin_job.addArguments(plugin_name)
-                
                 plugin_job.addArguments(var_binds_str)
                 plugin_job.addArguments(stage_binds_str)
                 plugin_job.addArguments(encrypted_arg_binds_str)
@@ -270,7 +281,8 @@ with open(workflow_filename,'r') as workflow_file:
                     dax.addFile(res_file)
 
                 # create job for this plugin
-                plugin_job = Job(name="run-connector-plugin")
+                exec_name = "run-connector-plugin-%s" % plugin_name.lower()
+                plugin_job = Job(name=exec_name)
 
                 # args:
                 # workflow_file
@@ -294,9 +306,6 @@ with open(workflow_filename,'r') as workflow_file:
                     output_dir = '%s/%s' % (job_dir,workflow_stage)
                     plugin_job.addArguments("Input")
                     plugin_job.addArguments(output_dir)
-                
-                # plugin name as Conda environment name
-                plugin_job.addArguments(plugin_name)
                 
                 plugin_job.addArguments(var_binds_str)
                 plugin_job.addArguments(stage_binds_str)
@@ -327,7 +336,8 @@ with open(workflow_filename,'r') as workflow_file:
                 dax.addFile(res_file)
 
             # create job for this plugin
-            plugin_job = Job(name="run-connector-plugin")
+            exec_name = "run-connector-plugin-%s" % plugin_name.lower()
+            plugin_job = Job(name=exec_name)
 
             # args:
             # workflow_file
@@ -351,9 +361,6 @@ with open(workflow_filename,'r') as workflow_file:
                 output_dir = '%s/%s' % (job_dir,workflow_stage)
                 plugin_job.addArguments("Input")
                 plugin_job.addArguments(output_dir)
-                
-            # plugin name as Conda environment name
-            plugin_job.addArguments(plugin_name)
                 
             plugin_job.addArguments(var_binds_str)
             plugin_job.addArguments(stage_binds_str)

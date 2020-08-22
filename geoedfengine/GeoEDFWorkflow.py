@@ -30,6 +30,10 @@ class GeoEDFWorkflow:
     # possible values are 'local', 'geoedf-public', 'cluster#', 'condorpool' (for testing)
     def __init__(self,def_filename=None,target='condorpool'):
 
+        # set environment variables necessary for Singularity registry client
+        os.environ['SREGISTRY_CLIENT'] = 'registry'
+        os.environ['SREGISTRY_REGISTRY_BASE'] = 'https://www.registry.geoedf.org'
+
         # validation (1) make sure workflow file has been provided
         if def_filename is None:
             raise GeoEDFError('Error: a workflow YAML file must be provided!')
@@ -64,6 +68,10 @@ class GeoEDFWorkflow:
         # TODO: figure out why Pegasus is not returning checksum in metadata
         # causes integrity checking to fail
         self.instance.set_property('pegasus.integrity.checking','none')
+        self.instance.set_property('pegasus.data.configuration','nonsharedfs')
+        self.instance.set_property('pegasus.transfer.worker.package','true')
+        self.instance.set_property('pegasus.condor.arguments.quote','false')
+        self.instance.set_property('pegasus.transfer.links','true')
         self.instance.run(site=self.target)
         self.instance.status(loop=True)
 

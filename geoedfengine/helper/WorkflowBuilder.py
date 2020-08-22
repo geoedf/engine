@@ -47,59 +47,32 @@ class WorkflowBuilder:
     def count_stages(self):
         return len(self.workflow_dict.keys())
 
-    # initialize Pegasus DAX with an admin task
-    # e.g. job for creating the remote data directory for the workflow
-    # also creates the local run directory for this workflow
-    def init_workflow(self):
-
-        # get a unique identifier based on epoch time
-        self.workflow_id = self.helper.gen_workflow_id()
-        
-        # initialize DAX
-        self.dax = ADAG("geoedf-%s" % self.workflow_id)
-
-        # determine full path of new directory to hold intermediate results on target site
-        self.job_dir = self.helper.target_job_dir(self.target)
-
-        # create a local run directory; this will be used to store subdax XMLs and intermediate
-        # outputs
-        self.run_dir = self.helper.create_run_dir()
-
+    # construct the transformation catalog (TC)
+    def build_transformation_catalog(self):
         # initialize the transformation catalog
         self.tc = TransformationCatalog(workflow_dir=self.run_dir)
 
-        # add the connector container to the DAX-level TC
-        conn_container = Container("geoedf-connector",type="singularity",image="library://rkalyanapurdue/connectors/geoedf:latest",mount=["%s:/data/%s" % (self.job_dir,self.workflow_id)])
-        #conn_container = Container("geoedf-connector",type="singularity",image="library://rkalyana/default/geoedf:latest",mount=["%s:/data/%s" % (self.job_dir,self.workflow_id)])
-        self.tc.add_container(conn_container)
-        
-        # create and add executables for running connector plugins
+        # Create executables and add them to the TC
+        # first a few common executables
 
-        conn_exec = Executable("run-connector-plugin",installed=True,container=conn_container)
-        conn_exec.addPFN(PFN("/usr/local/bin/run-workflow-stage.sh",self.target))
-        self.tc.add(conn_exec)
+        # these are provided by the workflowutils container
+        utils_container = Container("workflowutils",type="singularity",image="library://geoedfproject/framework/workflowutils:latest",mount=["%s:/data/%s" % (self.job_dir,self.workflow_id)])
+        self.tc.add_container(utils_container)
 
-        merge_filter_out_exec = Executable("merge.py",installed=True,container=conn_container)
+        # create an executable for merging outputs of filters
+        merge_filter_out_exec = Executable("merge.py",installed=True,container=utils_container)
         merge_filter_out_exec.addPFN(PFN("/usr/local/bin/merge.py",self.target))
         self.tc.add(merge_filter_out_exec)
 
-        collect_input_out_exec = Executable("collect.py",installed=True,container=conn_container)
+        # create an executable for collecting the list of names of files that have been produced by a plugin
+        collect_input_out_exec = Executable("collect.py",installed=True,container=utils_container)
         collect_input_out_exec.addPFN(PFN("/usr/local/bin/collect.py",self.target))
         self.tc.add(collect_input_out_exec)
 
         # create an executable for generating a public-private key pair
-        # this is provided by the framework and will be run in the connector container
-        gen_keypair_exec = Executable(name="gen_keypair", installed=True, container=conn_container)
+        gen_keypair_exec = Executable(name="gen_keypair", installed=True, container=utils_container)
         gen_keypair_exec.addPFN(PFN("/usr/local/bin/gen-keypair.py",self.target))
         self.tc.add(gen_keypair_exec)
-
-        # parse processor registry and add processor containers and executables to the DAX-level TC
-        hdfeosshapefilemask_cont = Container("geoedf-hdfeosshapefilemask",type="singularity",image="library://rkalyanapurdue/processors/hdfeosshapefilemask:latest",mount=["%s:/data/%s" % (self.job_dir,self.workflow_id)])
-        #hdfeosshapefilemask_cont = Container("geoedf-hdfeosshapefilemask",type="singularity",image="library://rkalyana/default/geoedf-hdfeosshapefilemask",mount=["%s:/data/%s" % (self.job_dir,self.workflow_id)])
-        self.tc.add_container(hdfeosshapefilemask_cont)
-        hdfeosshapefilemask_exec = Executable("run-processor-hdfeosshapefilemask",installed=True,container=hdfeosshapefilemask_cont)
-        hdfeosshapefilemask_exec.addPFN(PFN("/usr/local/bin/run-workflow-stage.sh",self.target))
-        self.tc.add(hdfeosshapefilemask_exec)
 
         # executables that create connector and processor plugin subdax
         # path to executable is determined by running "which"
@@ -125,8 +98,10 @@ class WorkflowBuilder:
 
         # create an executable for making directories for each workflow stage
         # needs to be at object-level since we need to use the target for the PFN
-        mkdir = Executable(name="mkdir", arch="x86_64", installed=True)
-        mkdir.addPFN(PFN("/bin/mkdir",self.target))
+        #mkdir = Executable(name="mkdir", arch="x86_64", installed=True)
+        #mkdir.addPFN(PFN("/bin/mkdir",self.target))
+        mkdir = Executable(name="mkdir", arch="x86_64", installed=False)
+        mkdir.addPFN(PFN("file:///home/ubuntu/make-jobdir.sh","local"))
         self.tc.add(mkdir)
 
         # executable for final job that moves files to running dir so they can be returned
@@ -139,17 +114,86 @@ class WorkflowBuilder:
         dummy.addPFN(PFN("/bin/true",self.target))
         self.tc.add(dummy)
 
-        # build the site catalog
-        self.sc = SitesCatalog(workflow_dir=self.run_dir)
-        self.sc.add_site('condorpool', arch=Arch.X86_64, os=OSType.LINUX)
-        self.sc.add_site_profile('condorpool', namespace=Namespace.PEGASUS, key='style', value='condor')
-        self.sc.add_site_profile('condorpool', namespace=Namespace.CONDOR, key='universe', value='vanilla')
-        self.sc.add_site_profile('condorpool', namespace=Namespace.CONDOR, key='should_transfer_files', value=True)
-        self.sc.add_site_profile('condorpool', namespace=Namespace.CONDOR, key='requirements', value=True)
+        # add connector and processor plugin containers to DAX-level TC
+        # add the corresponding executable for each plguin
 
-        # build replica catalog
+        # retrieve dictionaries of containers from Singularity registry
+        (reg_connectors,reg_processors) = self.helper.get_registry_containers()
+
+        # create container and executable for each connector and processor plugin
+        for conn_plugin in reg_connectors:
+            plugin_name = conn_plugin
+            plugin_image = "library://geoedfproject/%s" % reg_connectors[conn_plugin]
+            exec_name = "run-connector-plugin-%s" % plugin_name
+            
+            conn_container = Container(plugin_name,type="singularity",image=plugin_image,mount=["%s:/data/%s" % (self.job_dir,self.workflow_id)])
+            self.tc.add_container(conn_container)
+
+            conn_exec = Executable(exec_name,installed=True,container=conn_container)
+            conn_exec.addPFN(PFN("/usr/local/bin/run-workflow-stage.sh",self.target))
+            self.tc.add(conn_exec)
+            
+        for proc_plugin in reg_processors:
+            plugin_name = proc_plugin
+            plugin_image = "library://geoedfproject/%s" % reg_processors[proc_plugin]
+            exec_name = "run-processor-plugin-%s" % plugin_name
+            
+            proc_container = Container(plugin_name,type="singularity",image=plugin_image,mount=["%s:/data/%s" % (self.job_dir,self.workflow_id)])
+            self.tc.add_container(proc_container)
+
+            proc_exec = Executable(exec_name,installed=True,container=proc_container)
+            proc_exec.addPFN(PFN("/usr/local/bin/run-workflow-stage.sh",self.target))
+            self.tc.add(proc_exec)
+            
+    # build the site catalog
+    def build_site_catalog(self):
+        self.sc = SitesCatalog(workflow_dir=self.run_dir)
+        self.sc.add_site('brown', arch=Arch.X86_64, os=OSType.LINUX)
+        self.sc.add_site_profile('brown', namespace=Namespace.PEGASUS, key='style', value='ssh')
+        self.sc.add_site_profile('brown', namespace=Namespace.PEGASUS, key='change.dir', value='true')
+        self.sc.add_site_profile('brown', namespace=Namespace.CONDOR, key='should_transfer_files', value=True)
+        self.sc.add_site_profile('brown', namespace=Namespace.CONDOR, key='requirements', value=True)
+        self.sc.add_site_profile('brown', namespace=Namespace.CONDOR, key='universe', value='grid')
+        self.sc.add_job_manager('brown', type='batch', contact='rkalyana@brown.rcac.purdue.edu', scheduler='slurm', jobtype='compute')
+        self.sc.add_job_manager('brown', type='batch', contact='rkalyana@brown.rcac.purdue.edu', scheduler='slurm', jobtype='auxillary')
+        self.sc._sites['brown']['directories'] = {
+            'shared-scratch': { 'path': '/scratch/brown/rkalyana/pegasus', 'contact': 'rkalyana@brown.rcac.purdue.edu' }}
+        
+        self.sc.add_site_profile('local', namespace='env', key='SSH_PRIVATE_KEY', value='/home/ubuntu/.ssh/bosco_key.rsa')
+        self.sc.add_site_profile('local', namespace='env', key='PATH', value='/bin:/usr/bin:/usr/local/bin')
+        
+
+    # build replica catalog
+    def build_replica_catalog(self):
         self.rc = ReplicaCatalog(workflow_dir=self.run_dir)
         self.rc.add('gpg.txt', 'file:///tmp/gpg.txt', site='local')
+
+    # initialize Pegasus DAX with an admin task
+    # e.g. job for creating the remote data directory for the workflow
+    # also creates the local run directory for this workflow
+    def init_workflow(self):
+
+        # get a unique identifier based on epoch time
+        self.workflow_id = self.helper.gen_workflow_id()
+        
+        # initialize DAX
+        self.dax = ADAG("geoedf-%s" % self.workflow_id)
+
+        # determine full path of new directory to hold intermediate results on target site
+        self.job_dir = self.helper.target_job_dir(self.target)
+
+        # create a local run directory; this will be used to store subdax XMLs and intermediate
+        # outputs
+        self.run_dir = self.helper.create_run_dir()
+
+        # build the transformation catalog
+        self.build_transformation_catalog()
+
+        # build the site catalog
+        self.build_site_catalog()
+
+        # build replica catalog
+        self.build_replica_catalog()
 
         # leaf job used to manage dependencies across stages
         self.leaf_job = None
@@ -301,9 +345,12 @@ class WorkflowBuilder:
                         local_file_args_str = 'None'
                     else:
                         local_file_args_str = json.dumps(json.dumps(conn_inst.local_file_args[plugin_id]))
+                    # stage refs with dir modifiers
+                    dir_mod_refs_str = self.helper.list_to_str(conn_inst.dir_modified_refs[plugin_id])
+                    
                     stage_id = '%d' % stage_num
                     plugin_name = conn_inst.plugin_names[plugin_id]
-                    subdax_job = self.construct_plugin_subdax(stage_id, subdax_filepath, plugin_id, plugin_name, dep_vars_str, stage_refs_str,local_file_args_str, sensitive_arg_binds_str=sensitive_arg_binds_str)
+                    subdax_job = self.construct_plugin_subdax(stage_id, subdax_filepath, plugin_id, plugin_name, dep_vars_str, stage_refs_str,local_file_args_str, sensitive_arg_binds_str, dir_mod_refs_str)
                     self.dax.addJob(subdax_job)
 
                     # add dependencies; mkdir job and any var dependencies
@@ -315,7 +362,8 @@ class WorkflowBuilder:
 
                     # add job executing sub-workflow to DAX
                     subdax_exec_job = DAX(subdax_filename)
-                    subdax_exec_job.addArguments("-Dpegasus.catalog.site.file=/usr/local/data/sites.xml",
+                    sites_catalog_file = '%s/sites.xml' % self.run_dir
+                    subdax_exec_job.addArguments("-Dpegasus.catalog.site.file=%s" % sites_catalog_file,
                                                  "-Dpegasus.integrity.checking=none",
                                                  "--sites",self.target,
                                                  "--output-site","local",
@@ -343,7 +391,7 @@ class WorkflowBuilder:
     # constructs the subdax and its executor job for a processor in the workflow
     def construct_proc_subdax(self,stage_num,workflow_stage,stage_mkdir_job):
         # instantiate GeoEDFProcessor object which performs validation
-        proc_inst = GeoEDFProcessor(workflow_stage)
+        proc_inst = GeoEDFProcessor(workflow_stage,stage_num)
 
         # file to hold the subdax for this plugin
         stage_name = 'stage-%d-Processor' % stage_num
@@ -366,6 +414,7 @@ class WorkflowBuilder:
                 local_file_args_str = 'None'
             else:
                 local_file_args_str = json.dumps(json.dumps(proc_inst.local_file_args))
+            
             stage_id = '%d' % stage_num
             plugin_name = proc_inst.plugin_name
 
@@ -377,8 +426,11 @@ class WorkflowBuilder:
                 sensitive_arg_binds_str = json.dumps(json.dumps(sensitive_arg_binds))
             else:
                 sensitive_arg_binds_str = 'None'
+                
+            # args with dir modifiers
+            dir_mod_refs_str = self.helper.list_to_str(proc_inst.dir_modified_refs)
 
-            subdax_job = self.construct_plugin_subdax(stage_id, subdax_filepath, plugin_name=plugin_name, stage_refs_str=stage_refs_str, local_file_args_str=local_file_args_str, sensitive_arg_binds_str=sensitive_arg_binds_str)
+            subdax_job = self.construct_plugin_subdax(stage_id, subdax_filepath, plugin_name=plugin_name, stage_refs_str=stage_refs_str, local_file_args_str=local_file_args_str, sensitive_arg_binds_str=sensitive_arg_binds_str, dir_mod_refs_str = dir_mod_refs_str)
             self.dax.addJob(subdax_job)
 
             # add dependency on mkdir job
@@ -386,7 +438,8 @@ class WorkflowBuilder:
                                 
             # add job executing sub-workflow to DAX
             subdax_exec_job = DAX(subdax_filename)
-            subdax_exec_job.addArguments("-Dpegasus.catalog.site.file=/usr/local/data/sites.xml",
+            sites_catalog_file = '%s/sites.xml' % self.run_dir
+            subdax_exec_job.addArguments("-Dpegasus.catalog.site.file=%s" % sites_catalog_file,
                                          "-Dpegasus.integrity.checking=none",
                                          "--sites",self.target,
                                          "--output-site","local",
@@ -435,7 +488,8 @@ class WorkflowBuilder:
                                 
             # add job executing sub-workflow to DAX
             subdax_exec_job = DAX(subdax_filename)
-            subdax_exec_job.addArguments("-Dpegasus.catalog.site.file=/usr/local/data/sites.xml",
+            sites_catalog_file = '%s/sites.xml' % self.run_dir
+            subdax_exec_job.addArguments("-Dpegasus.catalog.site.file=%s" % sites_catalog_file,
                                          "-Dpegasus.integrity.checking=none",
                                          "--sites",self.target,
                                          "--output-site","local",
@@ -458,7 +512,8 @@ class WorkflowBuilder:
     # var dependencies encoded as comma separated string
     # stage references encoded as comma separated string
     # args bound to local files encoded as a JSON string of arg-filepath mappings
-    def construct_plugin_subdax(self,workflow_stage,subdax_filepath,plugin_id=None, plugin_name=None, var_deps_str=None,stage_refs_str=None,local_file_args_str=None,sensitive_arg_binds_str=None):
+    # stage references that have dir modifiers applied to them in some binding
+    def construct_plugin_subdax(self,workflow_stage,subdax_filepath,plugin_id=None, plugin_name=None, var_deps_str=None,stage_refs_str=None,local_file_args_str=None,sensitive_arg_binds_str=None,dir_mod_refs_str=None):
 
         # construct subdax and save in subdax file
         # executable to be used differs based on whether we are
@@ -472,14 +527,16 @@ class WorkflowBuilder:
             # workflow filepath
             # stage identifier
             # plugin identifier
+            # plugin name (used to build executable name)
             # subdax filepath
             # remote job directory
             # run directory
             # dependant vars as comma separated string
             # stage references as comma separated string
             # arg bindings to local files as JSON string
+            # stage references that have some dir modifier applied to them
             # target site
-            subdax_build_job.addArguments(self.workflow_filename,workflow_stage,plugin_id,plugin_name,subdax_filepath,self.job_dir,self.run_dir,var_deps_str,stage_refs_str,local_file_args_str,sensitive_arg_binds_str,self.target)
+            subdax_build_job.addArguments(self.workflow_filename,workflow_stage,plugin_id,plugin_name,subdax_filepath,self.job_dir,self.run_dir,var_deps_str,stage_refs_str,local_file_args_str,sensitive_arg_binds_str,dir_mod_refs_str,self.target)
             
             return subdax_build_job
 
@@ -492,15 +549,16 @@ class WorkflowBuilder:
             # job arguments:
             # workflow filepath
             # stage identifier
-            # plugin identifier
+            # plugin name (used to build executable name)
             # subdax filepath
             # remote job directory
             # run directory
             # dependant vars as comma separated string
             # stage references as comma separated string
             # arg bindings to local files as JSON string
+            # stage references that have some dir modifier applied to them
             # target site
-            subdax_build_job.addArguments(self.workflow_filename,workflow_stage,plugin_name,subdax_filepath,self.job_dir,self.run_dir,stage_refs_str,local_file_args_str,sensitive_arg_binds_str,self.target)
+            subdax_build_job.addArguments(self.workflow_filename,workflow_stage,plugin_name,subdax_filepath,self.job_dir,self.run_dir,stage_refs_str,local_file_args_str,sensitive_arg_binds_str,dir_mod_refs_str,self.target)
             
             return subdax_build_job
 
