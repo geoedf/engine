@@ -13,7 +13,7 @@ import sys
 import os
 import configparser
 
-Class GeoEDFConfig:
+class GeoEDFConfig:
 
     def __init__(self):
         # fetches config file from the prioritized list of paths,
