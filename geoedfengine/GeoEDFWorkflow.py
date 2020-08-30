@@ -21,7 +21,7 @@ from Pegasus.api import *
 from .helper.GeoEDFError import GeoEDFError
 from .helper.WorkflowBuilder import WorkflowBuilder
 from .helper.WorkflowUtils import WorkflowUtils
-from GeoEDFConfig import GeoEDFConfig
+from .GeoEDFConfig import GeoEDFConfig
 
 class GeoEDFWorkflow:
 
