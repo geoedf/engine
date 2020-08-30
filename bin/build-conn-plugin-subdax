@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 
 # builds a Pegasus subdax for a connector plugin and saves to an XML file
 
@@ -15,9 +15,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 
-#sys.path.append('/usr/lib/python2.7/dist-packages')
-
-from Pegasus.DAX3 import *
+from Pegasus.api import *
 
 from geoedfengine.helper.GeoEDFConnector import GeoEDFConnector
 from geoedfengine.helper.WorkflowUtils import WorkflowUtils
@@ -66,15 +64,14 @@ else:
 
 # initialize DAX, set up some basic executables
 if ':' in plugin_id:
-    dax = ADAG("stage-%s-Filter-%s" % (workflow_stage,plugin_id.split(':')[1]))
+    conn_plugin_wf = Workflow("stage-%s-Filter-%s" % (workflow_stage,plugin_id.split(':')[1]))
 else:
-    dax = ADAG("stage-%s-Input" % workflow_stage)
+    conn_plugin_wf = Workflow("stage-%s-Input" % workflow_stage)
 
 # add the workflow file to this DAX
 workflow_fname = os.path.split(workflow_filename)[1]
 workflow_dax_file = File(workflow_fname)
-workflow_dax_file.addPFN(PFN("file://%s" % workflow_filename,"local"))
-dax.addFile(workflow_dax_file)
+rc = ReplicaCatalog().add_replica("local",workflow_fname,workflow_filename)
 
 # get a helper
 helper = WorkflowUtils()
@@ -105,8 +102,8 @@ if local_file_args_exist:
     for local_file in local_files_needed:
         local_file_fname = os.path.split(local_file)[1]
         local_dax_file = File(local_file_fname)
+        rc.add_replica("local",local_file_fname,local_file)
         local_dax_file.addPFN(PFN("file://%s" % local_file,"local"))
-        dax.addFile(local_dax_file)
         local_dax_files.append(local_dax_file)
 
 # process sensitive arg bindings if any, encrypting them with the public key
@@ -213,11 +210,10 @@ with open(workflow_filename,'r') as workflow_file:
                     res_filename = '%s/results_%s_%s_%d.txt' % (job_dir,workflow_stage,filter_var,indx)
                     res_file = File(res_filename)
                     res_files.append(res_file)
-                    dax.addFile(res_file)
 
                 # create job for this plugin
                 exec_name = "run-connector-plugin-%s" % plugin_name.lower()
-                plugin_job = Job(name=exec_name)
+                plugin_job = Job(exec_name)
 
                 # args:
                 # workflow_file
@@ -228,28 +224,28 @@ with open(workflow_filename,'r') as workflow_file:
                 # encrypted arg binds str
                 # local file args str
                 # optional trailing list of file args (local files converted to inputs)
-                plugin_job.addArguments(workflow_dax_file)
-                plugin_job.uses(workflow_dax_file, link=Link.INPUT)
+                plugin_job.add_args(workflow_dax_file)
+                plugin_job.add_inputs(workflow_dax_file)
                 complete_workflow_stage = '%s:%s' % (workflow_stage,plugin_id)
-                plugin_job.addArguments(complete_workflow_stage)
+                plugin_job.add_args(complete_workflow_stage)
             
                 if plugin_type == 'Filter':
-                    plugin_job.addArguments("Filter")
-                    plugin_job.addArguments(res_file)
+                    plugin_job.add_args("Filter")
+                    plugin_job.add_args(res_file)
                 else:
-                    plugin_job.addArguments("Input")
+                    plugin_job.add_args("Input")
                     output_dir = '%s/%s' % (job_dir,workflow_stage)
-                    plugin_job.addArguments(output_dir)
+                    plugin_job.add_args(output_dir)
 
-                plugin_job.addArguments(var_binds_str)
-                plugin_job.addArguments(stage_binds_str)
-                plugin_job.addArguments(encrypted_arg_binds_str)
-                plugin_job.addArguments(local_file_args_str)
+                plugin_job.add_args(var_binds_str)
+                plugin_job.add_args(stage_binds_str)
+                plugin_job.add_args(encrypted_arg_binds_str)
+                plugin_job.add_args(local_file_args_str)
 
                 for local_dax_file in local_dax_files:
-                    plugin_job.addArguments(local_dax_file)
+                    plugin_job.add_args(local_dax_file)
                     
-                dax.addJob(plugin_job)
+                conn_plugin_wf.add_jobs(plugin_job)
                 plugin_jobs.append(plugin_job)
 
                 indx += 1
@@ -278,11 +274,10 @@ with open(workflow_filename,'r') as workflow_file:
                     res_filename = '%s/results_%s_%s_%d.txt' % (job_dir,workflow_stage,filter_var,indx)
                     res_file = File(res_filename)
                     res_files.append(res_file)
-                    dax.addFile(res_file)
 
                 # create job for this plugin
                 exec_name = "run-connector-plugin-%s" % plugin_name.lower()
-                plugin_job = Job(name=exec_name)
+                plugin_job = Job(exec_name)
 
                 # args:
                 # workflow_file
@@ -293,29 +288,29 @@ with open(workflow_filename,'r') as workflow_file:
                 # encrypted arg binds str
                 # local file args str
                 # optional trailing list of file args (local files converted to inputs)
-                plugin_job.addArguments(workflow_dax_file)
-                plugin_job.uses(workflow_dax_file, link=Link.INPUT)
+                plugin_job.add_args(workflow_dax_file)
+                plugin_job.add_inputs(workflow_dax_file)
                 
                 complete_workflow_stage = '%s:%s' % (workflow_stage,plugin_id)
-                plugin_job.addArguments(complete_workflow_stage)
+                plugin_job.add_args(complete_workflow_stage)
             
                 if plugin_type == 'Filter':
-                    plugin_job.addArguments("Filter")
-                    plugin_job.addArguments(res_file)
+                    plugin_job.add_args("Filter")
+                    plugin_job.add_args(res_file)
                 else:
                     output_dir = '%s/%s' % (job_dir,workflow_stage)
-                    plugin_job.addArguments("Input")
-                    plugin_job.addArguments(output_dir)
+                    plugin_job.add_args("Input")
+                    plugin_job.add_args(output_dir)
                 
-                plugin_job.addArguments(var_binds_str)
-                plugin_job.addArguments(stage_binds_str)
-                plugin_job.addArguments(encrypted_arg_binds_str)
-                plugin_job.addArguments(local_file_args_str)
+                plugin_job.add_args(var_binds_str)
+                plugin_job.add_args(stage_binds_str)
+                plugin_job.add_args(encrypted_arg_binds_str)
+                plugin_job.add_args(local_file_args_str)
 
                 for local_dax_file in local_dax_files:
-                    plugin_job.addArguments(local_dax_file)
+                    plugin_job.add_args(local_dax_file)
                     
-                dax.addJob(plugin_job)
+                conn_plugin_wf.add_jobs(plugin_job)
                 plugin_jobs.append(plugin_job)
 
                 indx += 1
@@ -333,11 +328,10 @@ with open(workflow_filename,'r') as workflow_file:
                 res_filename = '%s/results_%s_%s_0.txt' % (job_dir,workflow_stage,filter_var)
                 res_file = File(res_filename)
                 res_files.append(res_file)
-                dax.addFile(res_file)
 
             # create job for this plugin
             exec_name = "run-connector-plugin-%s" % plugin_name.lower()
-            plugin_job = Job(name=exec_name)
+            plugin_job = Job(exec_name)
 
             # args:
             # workflow_file
@@ -348,64 +342,64 @@ with open(workflow_filename,'r') as workflow_file:
             # encrypted arg binds str
             # local file args str
             # optional trailing list of file args (local files converted to inputs)
-            plugin_job.addArguments(workflow_dax_file)
-            plugin_job.uses(workflow_dax_file, link=Link.INPUT)
+            plugin_job.add_args(workflow_dax_file)
+            plugin_job.add_inputs(workflow_dax_file)
             
             complete_workflow_stage = '%s:%s' % (workflow_stage,plugin_id)
-            plugin_job.addArguments(complete_workflow_stage)
+            plugin_job.add_args(complete_workflow_stage)
             
             if plugin_type == 'Filter':
-                plugin_job.addArguments("Filter")
-                plugin_job.addArguments(res_file)
+                plugin_job.add_args("Filter")
+                plugin_job.add_args(res_file)
             else:
                 output_dir = '%s/%s' % (job_dir,workflow_stage)
-                plugin_job.addArguments("Input")
-                plugin_job.addArguments(output_dir)
+                plugin_job.add_args("Input")
+                plugin_job.add_args(output_dir)
                 
-            plugin_job.addArguments(var_binds_str)
-            plugin_job.addArguments(stage_binds_str)
-            plugin_job.addArguments(encrypted_arg_binds_str)
-            plugin_job.addArguments(local_file_args_str)
+            plugin_job.add_args(var_binds_str)
+            plugin_job.add_args(stage_binds_str)
+            plugin_job.add_args(encrypted_arg_binds_str)
+            plugin_job.add_args(local_file_args_str)
 
             for local_dax_file in local_dax_files:
-                plugin_job.addArguments(local_dax_file)
+                plugin_job.add_args(local_dax_file)
                     
-            dax.addJob(plugin_job)
+            conn_plugin_wf.add_jobs(plugin_job)
             plugin_jobs.append(plugin_job)
 
         # merge results (for filters)
         if plugin_type == 'Filter':
-            merge_job = Job(name="merge.py")
-            merge_job.addArguments(job_dir)
-            merge_job.addArguments(workflow_stage)
-            merge_job.addArguments(filter_var)
+            merge_job = Job("merge.py")
+            merge_job.add_args(job_dir)
+            merge_job.add_args(workflow_stage)
+            merge_job.add_args(filter_var)
             for res_file in res_files:
-                merge_job.addArguments(res_file)
+                merge_job.add_args(res_file)
             merged_res_filename = 'results_%s_%s.txt' % (workflow_stage,filter_var)
             merged_res_file = File(merged_res_filename)
-            dax.addFile(merged_res_file)
-            merge_job.uses(merged_res_file, link=Link.OUTPUT)
-            dax.addJob(merge_job)
-            for plugin_job in plugin_jobs:
-                dax.depends(parent=plugin_job,child=merge_job)
+            merge_job.add_outputs(merged_res_file)
+            conn_plugin_wf.add_jobs(merge_job)
+            conn_plugin_wf.add_dependency(merge_job,parents=plugin_jobs)
 
         # collect output names (for input)
         if plugin_type == 'Input':
-            collect_job = Job(name="collect.py")
+            collect_job = Job("collect.py")
             output_dir = '%s/%s' % (job_dir,workflow_stage)
-            collect_job.addArguments(workflow_stage)
-            collect_job.addArguments(output_dir)
+            collect_job.add_args(workflow_stage)
+            collect_job.add_args(output_dir)
             collect_res_filename = 'results_%s.txt' % workflow_stage
             collect_res_file = File(collect_res_filename)
-            dax.addFile(collect_res_file)
-            collect_job.uses(collect_res_file, link=Link.OUTPUT)
-            dax.addJob(collect_job)
-            for plugin_job in plugin_jobs:
-                dax.depends(parent=plugin_job,child=collect_job)
+            collect_job.add_outputs(collect_res_file)
+            conn_plugin_wf.add_jobs(collect_job)
+            conn_plugin_wf.add_dependency(collect_job,parents=plugin_job)
 
+        # write replica catalog
+        rc.write()
+        conn_plugin_wf.add_replica_catalog(rc)
+        
         # write out to DAX xml file
-        with open(subdax_filename,'w') as subdax_file:
-            dax.writeXML(subdax_file)
+        conn_plugin_wf.write(subdax_filename)
+
     except:
         raise
 

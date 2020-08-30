@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 """ Top-level workflow class: accepts a GeoEDF workflow encoded as YAML file or dictionary. 
@@ -16,12 +16,12 @@ import itertools
 import random
 from functools import reduce
 
-from Pegasus.DAX3 import *
-from Pegasus.jupyter.instance import *
+from Pegasus.api import *
 
 from .helper.GeoEDFError import GeoEDFError
 from .helper.WorkflowBuilder import WorkflowBuilder
 from .helper.WorkflowUtils import WorkflowUtils
+from GeoEDFConfig import GeoEDFConfig
 
 class GeoEDFWorkflow:
 
@@ -30,9 +30,13 @@ class GeoEDFWorkflow:
     # possible values are 'local', 'geoedf-public', 'cluster#', 'condorpool' (for testing)
     def __init__(self,def_filename=None,target='condorpool'):
 
+        # fetch the config
+        self.config = GeoEDFConfig()
+        
         # set environment variables necessary for Singularity registry client
-        os.environ['SREGISTRY_CLIENT'] = 'registry'
-        os.environ['SREGISTRY_REGISTRY_BASE'] = 'https://www.registry.geoedf.org'
+        # these are fetched from the config
+        os.environ['SREGISTRY_CLIENT'] = self.config['REGISTRY']['registry_client']
+        os.environ['SREGISTRY_REGISTRY_BASE'] = self.config['REGISTRY']['registry_base']
 
         # validation (1) make sure workflow file has been provided
         if def_filename is None:
@@ -54,26 +58,38 @@ class GeoEDFWorkflow:
         # build the concrete Pegasus workflow
         self.builder.build_pegasus_dax()
 
+        # write out final replica catalog
+        self.builder.rc.write()
+
         # get the dax
-        self.dax = self.builder.dax
+        self.geoedf_wf = self.builder.geoedf_wf
 
         # execution target
         self.target = target
 
     # executes the Pegasus DAX constructed by the builder
     def execute(self):
-        # get a workflow instance to execute
-        self.instance = self.builder.get_workflow_instance()
-        # turn off integrity checking (for now)
-        # TODO: figure out why Pegasus is not returning checksum in metadata
-        # causes integrity checking to fail
-        self.instance.set_property('pegasus.integrity.checking','none')
-        self.instance.set_property('pegasus.data.configuration','nonsharedfs')
-        self.instance.set_property('pegasus.transfer.worker.package','true')
-        self.instance.set_property('pegasus.condor.arguments.quote','false')
-        self.instance.set_property('pegasus.transfer.links','true')
-        self.instance.run(site=self.target)
-        self.instance.status(loop=True)
+
+        # set execution properties
+        props = Properties()
+
+        # in dev mode, we don't need many of the transfer properties
+        if self.config['DEFAULT']['mode'] == 'dev':
+            props['pegasus.integrity.checking'] = 'none'
+        else:
+            props['pegasus.integrity.checking'] = 'none'
+            props['pegasus.data.configuration'] = 'nonsharedfs'
+            props['pegasus.transfer.worker.package'] = 'true'
+            props['pegasus.condor.arguments.quote'] = 'false'
+            props['pegasus.transfer.links'] = 'true'
+
+        # set the replica catalog for this workflow
+        self.geoedf_wf.add_replica_catalog(self.builder.rc)
+
+        # prepare for outputs
+        output_dir = '%s/output' % self.builder.run_dir
+        self.geoedf_wf.plan(dir=self.builder.run_dir,output_dir=output_dir,submit=True).wait()
+        
 
 
 

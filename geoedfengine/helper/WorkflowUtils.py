@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 """ Provides low-level utilities used by the WorkflowBuilder class
@@ -13,9 +13,11 @@ import itertools
 import subprocess
 import time
 from getpass import getpass
+from ..GeoEDFConfig import GeoEDFConfig
 
-os.environ['SREGISTRY_CLIENT'] = 'registry'
-os.environ['SREGISTRY_REGISTRY_BASE'] = 'https://www.registry.geoedf.org'
+config = GeoEDFConfig()
+os.environ['SREGISTRY_CLIENT'] = config['REGISTRY']['registry_client']
+os.environ['SREGISTRY_REGISTRY_BASE'] = config['REGISTRY']['registry_base']
 
 from sregistry.main import get_client
 
@@ -32,12 +34,8 @@ class WorkflowUtils:
     # finds the path to an executable by running "which"
     def find_exec_path(self,exec_name):
         try:
-            #which_proc = subprocess.call(["which",exec_name],stdout=subprocess.PIPE)
-            #return which_proc.stdout.rstrip()
             ret = subprocess.check_output(["which",exec_name])
-            #PYTHON2=>3
             return ret.decode('utf-8').rstrip()
-            #return str(ret).rstrip()
         except subprocess.CalledProcessError:
             raise GeoEDFError("Error occurred in finding the executable %s. This should not happen if the workflow engine was successfully installed!!!" % exec_name)
 
@@ -47,8 +45,11 @@ class WorkflowUtils:
             return '/data/%s' % self.workflow_id
         elif target == 'condorpool':
             return '/data/%s' % self.workflow_id
-        elif target == 'brown':
-            return '/scratch/brown/rkalyana/pegasus/%s' % self.workflow_id
+        # else, find workflow scratch path in config
+        else:
+            #site_scratch_path = config['site'][target]['scratch_path']
+            site_scratch_path = ''
+            return site_scratch_path
 
     # create a run directory for this workflow
     def create_run_dir(self):
