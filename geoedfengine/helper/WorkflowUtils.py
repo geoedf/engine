@@ -15,9 +15,9 @@ import time
 from getpass import getpass
 from ..GeoEDFConfig import GeoEDFConfig
 
-config = GeoEDFConfig()
-os.environ['SREGISTRY_CLIENT'] = config['REGISTRY']['registry_client']
-os.environ['SREGISTRY_REGISTRY_BASE'] = config['REGISTRY']['registry_base']
+geoedf_cfg = GeoEDFConfig()
+os.environ['SREGISTRY_CLIENT'] = geoedf_cfg.config['REGISTRY']['registry_client']
+os.environ['SREGISTRY_REGISTRY_BASE'] = geoedf_cfg.config['REGISTRY']['registry_base']
 
 from sregistry.main import get_client
 

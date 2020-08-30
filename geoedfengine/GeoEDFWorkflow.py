@@ -31,12 +31,12 @@ class GeoEDFWorkflow:
     def __init__(self,def_filename=None,target='condorpool'):
 
         # fetch the config
-        self.config = GeoEDFConfig()
+        self.geoedf_cfg = GeoEDFConfig()
         
         # set environment variables necessary for Singularity registry client
         # these are fetched from the config
-        os.environ['SREGISTRY_CLIENT'] = self.config['REGISTRY']['registry_client']
-        os.environ['SREGISTRY_REGISTRY_BASE'] = self.config['REGISTRY']['registry_base']
+        os.environ['SREGISTRY_CLIENT'] = self.geoedf_cfg.config['REGISTRY']['registry_client']
+        os.environ['SREGISTRY_REGISTRY_BASE'] = self.geoedf_cfg.config['REGISTRY']['registry_base']
 
         # validation (1) make sure workflow file has been provided
         if def_filename is None:
@@ -74,7 +74,7 @@ class GeoEDFWorkflow:
         props = Properties()
 
         # in dev mode, we don't need many of the transfer properties
-        if self.config['DEFAULT']['mode'] == 'dev':
+        if self.geoedf_cfg.config['DEFAULT']['mode'] == 'dev':
             props['pegasus.integrity.checking'] = 'none'
         else:
             props['pegasus.integrity.checking'] = 'none'
