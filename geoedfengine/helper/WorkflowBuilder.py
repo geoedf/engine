@@ -190,9 +190,7 @@ class WorkflowBuilder:
                     image_path = os.path.join("/images",file)
                     # figure out if connector or processor
                     plugin_name = os.path.splitext(file)[0]
-                    if plugin_name.endswith("Input") or
-                       plugin_name.endswith("Filter") or
-                       plugin_name.endswith("Output"):
+                    if plugin_name.endswith("Input") or plugin_name.endswith("Filter") or plugin_name.endswith("Output"):
                         #connector
                         exec_name = "run-connector-plugin-%s" % plugin_name.lower()
                     else: # processor
