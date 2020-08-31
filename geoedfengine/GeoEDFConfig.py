@@ -20,7 +20,7 @@ class GeoEDFConfig:
         std_dir_config = '%s/geoedf.cfg' % std_dir
 
         if not (os.path.exists(std_dir_config) and os.path.isfile(std_dir_config)):
-	    raise GeoEDFError('Error: required GeoEDF config file not found in /usr/local/config')
+            raise GeoEDFError('Error: required GeoEDF config file not found in /usr/local/config')
 	    
         # parse config
         self.config = configparser.ConfigParser()
