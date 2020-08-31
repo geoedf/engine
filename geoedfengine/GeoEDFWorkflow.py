@@ -27,8 +27,8 @@ class GeoEDFWorkflow:
 
     # def_filename is a YAML file that encodes the workflow
     # target corresponds to the config entry in an execution config file
-    # possible values are 'local', 'geoedf-public', 'cluster#', 'condorpool' (for testing)
-    def __init__(self,def_filename=None,target='condorpool'):
+    # possible values are 'local', 'geoedf-public', 'cluster#'
+    def __init__(self,def_filename=None,target='local'):
 
         # fetch the config
         self.geoedf_cfg = GeoEDFConfig()
@@ -72,19 +72,6 @@ class GeoEDFWorkflow:
 
     # executes the Pegasus DAX constructed by the builder
     def execute(self):
-
-        # set execution properties
-        props = Properties()
-
-        # in dev mode, we don't need many of the transfer properties
-        if self.mode == 'dev':
-            props['pegasus.integrity.checking'] = 'none'
-        else:
-            props['pegasus.integrity.checking'] = 'none'
-            props['pegasus.data.configuration'] = 'nonsharedfs'
-            props['pegasus.transfer.worker.package'] = 'true'
-            props['pegasus.condor.arguments.quote'] = 'false'
-            props['pegasus.transfer.links'] = 'true'
 
         # set the replica catalog for this workflow
         self.geoedf_wf.add_replica_catalog(self.builder.rc)

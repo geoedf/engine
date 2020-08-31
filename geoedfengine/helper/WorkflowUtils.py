@@ -43,8 +43,6 @@ class WorkflowUtils:
     def target_job_dir(self,target):
         if target == 'local':
             return '/data/%s' % self.workflow_id
-        elif target == 'condorpool':
-            return '/data/%s' % self.workflow_id
         # else, find workflow scratch path in config
         else:
             #site_scratch_path = config['site'][target]['scratch_path']

@@ -478,11 +478,11 @@ class WorkflowBuilder:
             subdax_exec_job = SubWorkflow(subdax_file, is_planned=False)
             output_dir = '%s/output' % self.run_dir
 
-            subdax_exec_job.addArguments("-Dpegasus.integrity.checking=none",
-                                         "--sites",self.target,
-                                         "--output-site","local",
-                                         "--output-dir",output_dir,
-                                         "--basename",stage_name)
+            subdax_exec_job.add_args("-Dpegasus.integrity.checking=none",
+                                     "--sites",self.target,
+                                     "--output-site","local",
+                                     "--output-dir",output_dir,
+                                     "--basename",stage_name)
             self.geoedf_wf.add_jobs(subdax_exec_job)
             # add dependency between job building subdax and job executing it
             self.geoedf_wf.add_dependency(subdax_exec_job,parents=[subdax_job])
@@ -508,7 +508,7 @@ class WorkflowBuilder:
         # construct subdax for this final job, then create a job to execute this subdax
         try:
             # job constructing final subdax
-            subdax_build_job = Job(name="build_final_subdax")
+            subdax_build_job = Job("build_final_subdax")
             subdax_build_job.add_selector_profile(execution_site="local")
 
             # job arguments:
@@ -527,11 +527,11 @@ class WorkflowBuilder:
             subdax_exec_job = SubWorkflow(subdax_filename)
             output_dir = '%s/output' % self.run_dir
 
-            subdax_exec_job.addArguments("-Dpegasus.integrity.checking=none",
-                                         "--sites",self.target,
-                                         "--output-site","local",
-                                         "--output-dir",output_dir,
-                                         "--basename","final")
+            subdax_exec_job.add_args("-Dpegasus.integrity.checking=none",
+                                     "--sites",self.target,
+                                     "--output-site","local",
+                                     "--output-dir",output_dir,
+                                     "--basename","final")
             self.geoedf_wf.add_jobs(subdax_exec_job)
             # add dependency between job building subdax and job executing it
             self.geoedf_wf.add_dependency(subdax_exec_job,parents=[subdax_build_job])
@@ -556,7 +556,7 @@ class WorkflowBuilder:
         # executable to be used differs based on whether we are
         # converting a connector or processor instance
         if plugin_id is not None: # connector
-            subdax_build_job = Job(name="build_conn_plugin_subdax")
+            subdax_build_job = Job("build_conn_plugin_subdax")
             # always run this job locally
             subdax_build_job.add_selector_profile(execution_site="local")
 
@@ -578,7 +578,7 @@ class WorkflowBuilder:
             return subdax_build_job
 
         else:
-            subdax_build_job = Job(name="build_proc_plugin_subdax")
+            subdax_build_job = Job("build_proc_plugin_subdax")
 
             # always run this job locally
             subdax_build_job.add_selector_profile(execution_site="local")

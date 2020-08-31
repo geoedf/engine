@@ -391,7 +391,7 @@ with open(workflow_filename,'r') as workflow_file:
             collect_res_file = File(collect_res_filename)
             collect_job.add_outputs(collect_res_file)
             conn_plugin_wf.add_jobs(collect_job)
-            conn_plugin_wf.add_dependency(collect_job,parents=plugin_job)
+            conn_plugin_wf.add_dependency(collect_job,parents=plugin_jobs)
 
         # write replica catalog
         rc.write()

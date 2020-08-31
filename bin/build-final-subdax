@@ -37,7 +37,6 @@ with open(final_results_filename,'r') as final_results_file:
         output_fname = os.path.split(output_filename)[1]
         # add these files to DAX
         output_file = File(output_fname)
-        dax.addFile(output_file)
         final_output_files.append(output_file)
 
 # create dummy final job with these outputs
