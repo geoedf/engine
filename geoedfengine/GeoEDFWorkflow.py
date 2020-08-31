@@ -32,6 +32,9 @@ class GeoEDFWorkflow:
 
         # fetch the config
         self.geoedf_cfg = GeoEDFConfig()
+
+        # figure out whether prod or dev mode
+        self.mode = self.geoedf_cfg.config['GENERAL']['mode']
         
         # set environment variables necessary for Singularity registry client
         # these are fetched from the config
@@ -53,7 +56,7 @@ class GeoEDFWorkflow:
         self.helper.validate_workflow(self.workflow_dict)
 
         # after validation suceeds, create a builder for this workflow
-        self.builder = WorkflowBuilder(def_filename,target)
+        self.builder = WorkflowBuilder(def_filename,self.mode,target)
 
         # build the concrete Pegasus workflow
         self.builder.build_pegasus_dax()
@@ -74,7 +77,7 @@ class GeoEDFWorkflow:
         props = Properties()
 
         # in dev mode, we don't need many of the transfer properties
-        if self.geoedf_cfg.config['DEFAULT']['mode'] == 'dev':
+        if self.mode == 'dev':
             props['pegasus.integrity.checking'] = 'none'
         else:
             props['pegasus.integrity.checking'] = 'none'

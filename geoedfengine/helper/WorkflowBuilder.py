@@ -30,12 +30,15 @@ class WorkflowBuilder:
     # pass along anything that may be needed; for now, just the target execution environment
     # creates local workflow directory to hold subworkflow DAX YAMLs
     # and merge result outputs
+    # mode is between prod and dev; in dev mode, local containers are allowed
 
-    def __init__(self,workflow_filename,target='local'):
+    def __init__(self,workflow_filename,mode='prod',target='local'):
         with open(workflow_filename,'r') as workflow_file:
             self.workflow_dict = yaml.load(workflow_file,Loader=FullLoader)
         self.workflow_filename = workflow_filename
         self.target = target
+
+        self.mode = mode
 
         # get a WorkflowUtils helper
         self.helper = WorkflowUtils()
@@ -178,6 +181,38 @@ class WorkflowBuilder:
                                        container=proc_container)
             
             self.tc.add_transformations(proc_exec)
+
+        # in dev mode add all local Singularity containers
+        if self.mode == 'dev':
+            # find all images in /images
+            for file in os.listdir("/images"):
+                if file.endswith(".sif"):
+                    image_path = os.path.join("/images",file)
+                    # figure out if connector or processor
+                    plugin_name = os.path.splitext(file)[0]
+                    if plugin_name.endswith("Input") or
+                       plugin_name.endswith("Filter") or
+                       plugin_name.endswith("Output"):
+                        #connector
+                        exec_name = "run-connector-plugin-%s" % plugin_name.lower()
+                    else: # processor
+                        exec_name = "run-processor-plugin-%s" % plugin_name.lower()
+                        
+                    plugin_container = Container(plugin_name.lower(),
+                                               Container.SINGULARITY,
+                                               image="file://%s" % image_path,
+                                               image_site="local",
+                                               mounts=["%s:/data/%s" % (self.job_dir,self.workflow_id)])
+
+                    plugin_exec = Transformation(exec_name,
+                                               is_stageable=True,
+                                               site=self.target,
+                                               pfn="/usr/local/bin/run-workflow-stage.sh",
+                                               container=plugin_container)
+                    
+                    self.tc.add_containers(plugin_container)
+                    self.tc.add_transformations(plugin_exec)
+        
 
         self.tc.write()
             
