@@ -524,7 +524,7 @@ class WorkflowBuilder:
             self.geoedf_wf.add_dependency(subdax_build_job,parents=[self.leaf_job])
                                 
             # add job executing sub-workflow to DAX
-            subdax_exec_job = SubWorkflow(subdax_filename)
+            subdax_exec_job = SubWorkflow(subdax_filename, is_planned=False)
             output_dir = '%s/output' % self.run_dir
 
             subdax_exec_job.add_args("-Dpegasus.integrity.checking=none",
