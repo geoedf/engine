@@ -119,19 +119,25 @@ class WorkflowBuilder:
         mkdir = Transformation("mkdir",
                                is_stageable=False,
                                pfn="/bin/mkdir",
-                               site=self.target)
+                               site=self.target,
+                               arch=Arch.X86_64,
+                               os_type=OS.LINUX)
 
         # executable for final job that moves files to running dir so they can be returned
         move = Transformation("move",
-                              is_stageable=False,
+                              is_stageable=True,
                               pfn="/bin/mv",
-                              site=self.target)
+                              site=self.target,
+                              arch=Arch.X86_64,
+                              os_type=OS.LINUX)
         
         # dummy executable for final job
         dummy = Transformation("dummy",
-                               is_stageable=False,
+                               is_stageable=True,
                                pfn="/bin/true",
-                               site=self.target)
+                               site=self.target,
+                               arch=Arch.X86_64,
+                               os_type=OS.LINUX)
 
         self.tc.add_transformations(mkdir,move,dummy)
 
