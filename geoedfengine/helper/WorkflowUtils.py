@@ -41,7 +41,7 @@ class WorkflowUtils:
 
     # determine fully qualified path to job directory for given execution target
     def target_job_dir(self,target):
-        if target == 'local':
+        if target == 'local' or target == 'condorpool':
             return '/data/%s' % self.workflow_id
         # else, find workflow scratch path in config
         else:
