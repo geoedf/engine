@@ -79,6 +79,8 @@ class GeoEDFWorkflow:
         # prepare for outputs
         output_dir = '%s/output' % self.builder.run_dir
 
-       # inform user
-       print("On successful completion, outputs will be placed at: %s" % output_dir)
+        # inform user
+        print("On successful completion, outputs will be placed at: %s" % output_dir)
+        
+        # plan and execute workflow
         self.geoedf_wf.plan(dir=self.builder.run_dir,output_dir=output_dir,submit=True).wait()
