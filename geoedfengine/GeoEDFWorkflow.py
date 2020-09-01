@@ -27,8 +27,8 @@ class GeoEDFWorkflow:
 
     # def_filename is a YAML file that encodes the workflow
     # target corresponds to the config entry in an execution config file
-    # possible values are 'local', 'geoedf-public', 'cluster#'
-    def __init__(self,def_filename=None,target='local'):
+    # possible values are 'local', 'geoedf-public', 'cluster#', or 'condorpool' (for testing)
+    def __init__(self,def_filename=None,target='condorpool'):
 
         # fetch the config
         self.geoedf_cfg = GeoEDFConfig()
@@ -78,9 +78,7 @@ class GeoEDFWorkflow:
 
         # prepare for outputs
         output_dir = '%s/output' % self.builder.run_dir
+
+       # inform user
+       print("On successful completion, outputs will be placed at: %s" % output_dir)
         self.geoedf_wf.plan(dir=self.builder.run_dir,output_dir=output_dir,submit=True).wait()
-        
-
-
-
-        

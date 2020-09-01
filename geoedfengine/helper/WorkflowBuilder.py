@@ -32,7 +32,7 @@ class WorkflowBuilder:
     # and merge result outputs
     # mode is between prod and dev; in dev mode, local containers are allowed
 
-    def __init__(self,workflow_filename,mode='prod',target='local'):
+    def __init__(self,workflow_filename,mode='prod',target='condorpool'):
         with open(workflow_filename,'r') as workflow_file:
             self.workflow_dict = yaml.load(workflow_file,Loader=FullLoader)
         self.workflow_filename = workflow_filename
@@ -203,7 +203,7 @@ class WorkflowBuilder:
                                                mounts=["%s:/data/%s" % (self.job_dir,self.workflow_id)])
 
                     plugin_exec = Transformation(exec_name,
-                                               is_stageable=True,
+                                               is_stageable=False,
                                                site=self.target,
                                                pfn="/usr/local/bin/run-workflow-stage.sh",
                                                container=plugin_container)
