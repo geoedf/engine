@@ -144,12 +144,56 @@ class WorkflowBuilder:
         # add connector and processor plugin containers to DAX-level TC
         # add the corresponding executable for each plguin
 
+        # in dev mode first add all local Singularity containers
+        # a local container overrides the same plugin found in the registry
+        # this is useful when testing changes to a pre-existing plugin
+
+        local_images = []
+
+        if self.mode == 'dev':
+            # find all images in /images
+            for file in os.listdir("/images"):
+                if file.endswith(".sif"):
+                    image_path = os.path.join("/images",file)
+                    # figure out if connector or processor
+                    plugin_name = os.path.splitext(file)[0]
+                    # add to array that is used to identify which images to skip from registry
+                    local_images.append(plugin_name)
+                    if plugin_name.endswith("Input") or plugin_name.endswith("Filter") or plugin_name.endswith("Output"):
+                        #connector
+                        print("Discovered local connector plugin: %s",plugin_name)
+                        exec_name = "run-connector-plugin-%s" % plugin_name.lower()
+                    else: # processor
+                        print("Discovered local processor plugin: %s",plugin_name)
+                        exec_name = "run-processor-plugin-%s" % plugin_name.lower()
+                        
+                    plugin_container = Container(plugin_name.lower(),
+                                               Container.SINGULARITY,
+                                               image="file://%s" % image_path,
+                                               image_site="local",
+                                               mounts=["%s:/data/%s" % (self.job_dir,self.workflow_id)])
+
+                    plugin_exec = Transformation(exec_name,
+                                               is_stageable=False,
+                                               site=self.target,
+                                               pfn="/usr/local/bin/run-workflow-stage.sh",
+                                               container=plugin_container)
+                    
+                    self.tc.add_containers(plugin_container)
+                    self.tc.add_transformations(plugin_exec)
+
         # retrieve dictionaries of containers from Singularity registry
         (reg_connectors,reg_processors) = self.helper.get_registry_containers()
 
         # create container and executable for each connector and processor plugin
+        # that isn't a local image
         for conn_plugin in reg_connectors:
             plugin_name = conn_plugin
+
+            if plugin_name in local_images:
+               print("Skipping plugin %s from registry" % plugin_name)
+               continue
+
             plugin_image = "library://%s" % reg_connectors[conn_plugin]
             exec_name = "run-connector-plugin-%s" % plugin_name
             
@@ -170,6 +214,11 @@ class WorkflowBuilder:
 
         for proc_plugin in reg_processors:
             plugin_name = proc_plugin
+
+            if plugin_name in local_images:
+               print("Skipping plugin %s from registry" % plugin_name)
+               continue
+
             plugin_image = "library://%s" % reg_processors[proc_plugin]
             exec_name = "run-processor-plugin-%s" % plugin_name
             
@@ -187,36 +236,6 @@ class WorkflowBuilder:
                                        container=proc_container)
             
             self.tc.add_transformations(proc_exec)
-
-        # in dev mode add all local Singularity containers
-        if self.mode == 'dev':
-            # find all images in /images
-            for file in os.listdir("/images"):
-                if file.endswith(".sif"):
-                    image_path = os.path.join("/images",file)
-                    # figure out if connector or processor
-                    plugin_name = os.path.splitext(file)[0]
-                    if plugin_name.endswith("Input") or plugin_name.endswith("Filter") or plugin_name.endswith("Output"):
-                        #connector
-                        exec_name = "run-connector-plugin-%s" % plugin_name.lower()
-                    else: # processor
-                        exec_name = "run-processor-plugin-%s" % plugin_name.lower()
-                        
-                    plugin_container = Container(plugin_name.lower(),
-                                               Container.SINGULARITY,
-                                               image="file://%s" % image_path,
-                                               image_site="local",
-                                               mounts=["%s:/data/%s" % (self.job_dir,self.workflow_id)])
-
-                    plugin_exec = Transformation(exec_name,
-                                               is_stageable=False,
-                                               site=self.target,
-                                               pfn="/usr/local/bin/run-workflow-stage.sh",
-                                               container=plugin_container)
-                    
-                    self.tc.add_containers(plugin_container)
-                    self.tc.add_transformations(plugin_exec)
-        
 
         self.tc.write()
             
