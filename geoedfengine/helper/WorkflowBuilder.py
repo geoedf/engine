@@ -158,13 +158,11 @@ class WorkflowBuilder:
                     # figure out if connector or processor
                     plugin_name = os.path.splitext(file)[0]
                     # add to array that is used to identify which images to skip from registry
-                    local_images.append(plugin_name)
+                    local_images.append(plugin_name.lower())
                     if plugin_name.endswith("Input") or plugin_name.endswith("Filter") or plugin_name.endswith("Output"):
                         #connector
-                        print("Discovered local connector plugin: %s",plugin_name)
                         exec_name = "run-connector-plugin-%s" % plugin_name.lower()
                     else: # processor
-                        print("Discovered local processor plugin: %s",plugin_name)
                         exec_name = "run-processor-plugin-%s" % plugin_name.lower()
                         
                     plugin_container = Container(plugin_name.lower(),
@@ -191,7 +189,6 @@ class WorkflowBuilder:
             plugin_name = conn_plugin
 
             if plugin_name in local_images:
-               print("Skipping plugin %s from registry" % plugin_name)
                continue
 
             plugin_image = "library://%s" % reg_connectors[conn_plugin]
@@ -216,7 +213,6 @@ class WorkflowBuilder:
             plugin_name = proc_plugin
 
             if plugin_name in local_images:
-               print("Skipping plugin %s from registry" % plugin_name)
                continue
 
             plugin_image = "library://%s" % reg_processors[proc_plugin]
@@ -494,7 +490,7 @@ class WorkflowBuilder:
             dir_mod_refs_str = self.helper.list_to_str(proc_inst.dir_modified_refs)
 
             subdax_job = self.construct_plugin_subdax(stage_id, subdax_filepath, plugin_name=plugin_name, stage_refs_str=stage_refs_str, local_file_args_str=local_file_args_str, sensitive_arg_binds_str=sensitive_arg_binds_str, dir_mod_refs_str = dir_mod_refs_str)
-            self.dax.addJob(subdax_job)
+            self.geoedf_wf.add_jobs(subdax_job)
 
             # add dependency on mkdir job
             self.geoedf_wf.add_dependency(subdax_job,parents=[stage_mkdir_job])

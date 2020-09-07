@@ -110,6 +110,7 @@ class WorkflowUtils:
                 else:
                     if subexp[0] != kernel:
                         return False
+                    return True
         else:
             return False
 

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 
 # builds a Pegasus subdax for a processor plugin and saves to an XML file
 
@@ -283,6 +283,7 @@ with open(workflow_filename,'r') as workflow_file:
 
         # write out replica catalog
         rc.write()
+        proc_plugin_wf.add_replica_catalog(rc)
         
         # write out to DAX xml file
         proc_plugin_wf.write(subdax_filename)
