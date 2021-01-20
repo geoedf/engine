@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 """ Top-level workflow class: accepts a GeoEDF workflow encoded as YAML file or dictionary. 
@@ -16,19 +16,30 @@ import itertools
 import random
 from functools import reduce
 
-from Pegasus.DAX3 import *
-from Pegasus.jupyter.instance import *
+from Pegasus.api import *
 
 from .helper.GeoEDFError import GeoEDFError
 from .helper.WorkflowBuilder import WorkflowBuilder
 from .helper.WorkflowUtils import WorkflowUtils
+from .GeoEDFConfig import GeoEDFConfig
 
 class GeoEDFWorkflow:
 
     # def_filename is a YAML file that encodes the workflow
     # target corresponds to the config entry in an execution config file
-    # possible values are 'local', 'geoedf-public', 'cluster#', 'condorpool' (for testing)
+    # possible values are 'local', 'geoedf-public', 'cluster#', or 'condorpool' (for testing)
     def __init__(self,def_filename=None,target='condorpool'):
+
+        # fetch the config
+        self.geoedf_cfg = GeoEDFConfig()
+
+        # figure out whether prod or dev mode
+        self.mode = self.geoedf_cfg.config['GENERAL']['mode']
+        
+        # set environment variables necessary for Singularity registry client
+        # these are fetched from the config
+        os.environ['SREGISTRY_CLIENT'] = self.geoedf_cfg.config['REGISTRY']['registry_client']
+        os.environ['SREGISTRY_REGISTRY_BASE'] = self.geoedf_cfg.config['REGISTRY']['registry_base']
 
         # validation (1) make sure workflow file has been provided
         if def_filename is None:
@@ -45,28 +56,31 @@ class GeoEDFWorkflow:
         self.helper.validate_workflow(self.workflow_dict)
 
         # after validation suceeds, create a builder for this workflow
-        self.builder = WorkflowBuilder(def_filename,target)
+        self.builder = WorkflowBuilder(def_filename,self.mode,target)
 
         # build the concrete Pegasus workflow
         self.builder.build_pegasus_dax()
 
+        # write out final replica catalog
+        self.builder.rc.write()
+
         # get the dax
-        self.dax = self.builder.dax
+        self.geoedf_wf = self.builder.geoedf_wf
 
         # execution target
         self.target = target
 
     # executes the Pegasus DAX constructed by the builder
     def execute(self):
-        # get a workflow instance to execute
-        self.instance = self.builder.get_workflow_instance()
-        # turn off integrity checking (for now)
-        # TODO: figure out why Pegasus is not returning checksum in metadata
-        # causes integrity checking to fail
-        self.instance.set_property('pegasus.integrity.checking','none')
-        self.instance.run(site=self.target)
-        self.instance.status(loop=True)
 
+        # set the replica catalog for this workflow
+        self.geoedf_wf.add_replica_catalog(self.builder.rc)
 
+        # prepare for outputs
+        output_dir = '%s/output' % self.builder.run_dir
 
+        # inform user
+        print("On successful completion, outputs will be placed at: %s" % output_dir)
         
+        # plan and execute workflow
+        self.geoedf_wf.plan(dir=self.builder.run_dir,output_dir=output_dir,submit=True).wait()

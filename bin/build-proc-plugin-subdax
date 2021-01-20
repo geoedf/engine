@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/python3
 
 # builds a Pegasus subdax for a processor plugin and saves to an XML file
 
@@ -14,9 +14,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 
-#sys.path.append('/usr/lib/python2.7/dist-packages')
-
-from Pegasus.DAX3 import *
+from Pegasus.api import *
 
 from geoedfengine.helper.GeoEDFProcessor import GeoEDFProcessor
 from geoedfengine.helper.WorkflowUtils import WorkflowUtils
@@ -31,10 +29,11 @@ from geoedfengine.helper.WorkflowUtils import WorkflowUtils
 # stage references as comma separated string
 # arg to local file bindings encoded as JSON string
 # sensitive arg bindings
+# stage references that have dir modifier applied to them
 # target site
 
 # basic validation on number of args
-if len(sys.argv) < 9:
+if len(sys.argv) < 10:
     raise Exception("Insufficient arguments to processor plugin subdax construction job")
 
 # extract the args
@@ -47,16 +46,16 @@ run_dir = str(sys.argv[6])
 stage_refs_str = str(sys.argv[7])
 local_file_binds_str = str(sys.argv[8])
 sensitive_arg_binds_str = str(sys.argv[9])
-target = str(sys.argv[10])
+dir_mod_refs_str = str(sys.argv[10])
+target = str(sys.argv[11])
 
 # initialize DAX, set up some basic executables
-dax = ADAG("stage-%s-Processor" % workflow_stage)
+proc_plugin_wf = Workflow("stage-%s-Processor" % workflow_stage)
 
 # add the workflow file to this DAX
 workflow_fname = os.path.split(workflow_filename)[1]
 workflow_dax_file = File(workflow_fname)
-workflow_dax_file.addPFN(PFN("file://%s" % workflow_filename,"local"))
-dax.addFile(workflow_dax_file)
+rc = ReplicaCatalog().add_replica("local", workflow_fname, workflow_filename)
 
 # get a helper
 helper = WorkflowUtils()
@@ -88,8 +87,7 @@ if local_file_args_exist:
     for local_file in local_files_needed:
         local_file_fname = os.path.split(local_file)[1]
         local_dax_file = File(local_file_fname)
-        local_dax_file.addPFN(PFN("file://%s" % local_file,"local"))
-        dax.addFile(local_dax_file)
+        rc.add_replica("local",local_file_fname, local_file)
         local_dax_files.append(local_dax_file)
         # special handling for shapefiles; also add other related files (dbf,shx,prj, etc.)
         # check if shapefile
@@ -106,8 +104,7 @@ if local_file_args_exist:
                     if local_dir_file.startswith(basename) and local_dir_file_ext != '.shp':
                         # add these also to DAX as inputs
                         other_local_dax_file = File(local_dir_file)
-                        other_local_dax_file.addPFN(PFN("file://%s" % full_path, "local"))
-                        dax.addFile(other_local_dax_file)
+                        rc.add_replica("local", local_dir_file, full_path)
                         other_local_dax_files.append(other_local_dax_file)
 
 # process sensitive arg bindings if any, encrypting them with the public key
@@ -143,7 +140,12 @@ if sensitive_arg_binds_str != 'None':
 
 else:
     encrypted_arg_binds_str = 'None'
-    
+
+# process stage references with dir modifier
+if dir_mod_refs_str != 'None':
+    dir_modified_refs = dir_mod_refs_str.split(',')
+else:
+    dir_modified_refs = []
 
 # extract the workflow stage
 with open(workflow_filename,'r') as workflow_file:
@@ -164,10 +166,13 @@ with open(workflow_filename,'r') as workflow_file:
             stage_ref_values = dict()
             for stage_ref in stage_refs:
                 stage_ref_values[stage_ref] = []
-                stage_ref_val_filename = '%s/outputs/results_%s.txt' % (run_dir,stage_ref)
+                stage_ref_val_filename = '%s/output/results_%s.txt' % (run_dir,stage_ref)
                 with open (stage_ref_val_filename,'r') as stage_ref_val_file:
                     for val in stage_ref_val_file:
                         stage_ref_values[stage_ref].append(val.rstrip())
+                # if this stage ref has a dir modifier applied to it, only retain one value
+                if stage_ref in dir_modified_refs:
+                    stage_ref_values[stage_ref] = stage_ref_values[stage_ref][:1]
 
         # if stage refs exist, build binding combinations and corresponding parallel jobs
         if stage_refs_exist:
@@ -184,8 +189,8 @@ with open(workflow_filename,'r') as workflow_file:
                 # create job for this plugin
                 # executable name is different for each proc since
                 # it needs to be run in the processor's own container
-                exec_name = "run-processor-%s" % plugin_name.lower()
-                plugin_job = Job(name=exec_name)
+                exec_name = "run-processor-plugin-%s" % plugin_name.lower()
+                plugin_job = Job(exec_name)
 
                 # args:
                 # workflow_file
@@ -196,27 +201,27 @@ with open(workflow_filename,'r') as workflow_file:
                 # encrypted arg binds str
                 # local file args str
                 # optional trailing list of file args (local files converted to inputs)
-                plugin_job.addArguments(workflow_dax_file)
-                plugin_job.uses(workflow_dax_file, link=Link.INPUT)
+                plugin_job.add_args(workflow_dax_file)
+                plugin_job.add_inputs(workflow_dax_file)
                 
-                plugin_job.addArguments(workflow_stage)
+                plugin_job.add_args(workflow_stage)
             
                 output_dir = '%s/%s' % (job_dir,workflow_stage)
-                plugin_job.addArguments("Processor")
-                plugin_job.addArguments(output_dir)
+                plugin_job.add_args("Processor")
+                plugin_job.add_args(output_dir)
                 
-                plugin_job.addArguments(stage_binds_str)
-                plugin_job.addArguments(encrypted_arg_binds_str)
-                plugin_job.addArguments(local_file_args_str)
+                plugin_job.add_args(stage_binds_str)
+                plugin_job.add_args(encrypted_arg_binds_str)
+                plugin_job.add_args(local_file_args_str)
 
                 for local_dax_file in local_dax_files:
-                    plugin_job.addArguments(local_dax_file)
-                    plugin_job.uses(local_dax_file, link=Link.INPUT)
+                    plugin_job.add_args(local_dax_file)
+                    plugin_job.add_inputs(local_dax_file)
                     
                 for other_local_dax_file in other_local_dax_files:
-                    plugin_job.uses(other_local_dax_file, link=Link.INPUT)
+                    plugin_job.add_inputs(other_local_dax_file)
                     
-                dax.addJob(plugin_job)
+                proc_plugin_wf.add_jobs(plugin_job)
                 plugin_jobs.append(plugin_job)
 
                 indx += 1
@@ -230,8 +235,8 @@ with open(workflow_filename,'r') as workflow_file:
             # create job for this plugin
             # executable name is different for each proc since
             # it needs to be run in the processor's own container
-            exec_name = "run-processor-%s" % plugin_name.lower()
-            plugin_job = Job(name=exec_name)
+            exec_name = "run-processor-plugin-%s" % plugin_name.lower()
+            plugin_job = Job(exec_name)
 
             # args:
             # workflow_file
@@ -242,45 +247,47 @@ with open(workflow_filename,'r') as workflow_file:
             # encrypted arg binds str
             # local file args str
             # optional trailing list of file args (local files converted to inputs)
-            plugin_job.addArguments(workflow_dax_file)
-            plugin_job.uses(workflow_dax_file, link=Link.INPUT)
+            plugin_job.add_args(workflow_dax_file)
+            plugin_job.add_inputs(workflow_dax_file)
                 
-            plugin_job.addArguments(workflow_stage)
+            plugin_job.add_args(workflow_stage)
             
             output_dir = '%s/%s' % (job_dir,workflow_stage)
-            plugin_job.addArguments("Processor")
-            plugin_job.addArguments(output_dir)
+            plugin_job.add_args("Processor")
+            plugin_job.add_args(output_dir)
                 
-            plugin_job.addArguments(stage_binds_str)
-            plugin_job.addArguments(encrypted_arg_binds_str)
-            plugin_job.addArguments(local_file_args_str)
+            plugin_job.add_args(stage_binds_str)
+            plugin_job.add_args(encrypted_arg_binds_str)
+            plugin_job.add_args(local_file_args_str)
 
             for local_dax_file in local_dax_files:
-                plugin_job.addArguments(local_dax_file)
-                plugin_job.uses(local_dax_file, link=Link.INPUT)
+                plugin_job.add_args(local_dax_file)
+                plugin_job.add_inputs(local_dax_file)
                     
             for other_local_dax_file in other_local_dax_files:
-                plugin_job.uses(other_local_dax_file, link=Link.INPUT)
+                plugin_job.add_inputs(other_local_dax_file)
                     
-            dax.addJob(plugin_job)
+            proc_plugin_wf.add_jobs(plugin_job)
             plugin_jobs.append(plugin_job)
 
         # collect output file names
-        collect_job = Job(name="collect.py")
+        collect_job = Job("collect.py")
         output_dir = '%s/%s' % (job_dir,workflow_stage)
-        collect_job.addArguments(workflow_stage)
-        collect_job.addArguments(output_dir)
+        collect_job.add_args(workflow_stage)
+        collect_job.add_args(output_dir)
         collect_res_filename = 'results_%s.txt' % workflow_stage
         collect_res_file = File(collect_res_filename)
-        dax.addFile(collect_res_file)
-        collect_job.uses(collect_res_file, link=Link.OUTPUT)
-        dax.addJob(collect_job)
-        for plugin_job in plugin_jobs:
-            dax.depends(parent=plugin_job,child=collect_job)
+        collect_job.add_outputs(collect_res_file)
+        proc_plugin_wf.add_jobs(collect_job)
+        proc_plugin_wf.add_dependency(collect_job,parents=plugin_jobs)
 
+        # write out replica catalog
+        rc.write()
+        proc_plugin_wf.add_replica_catalog(rc)
+        
         # write out to DAX xml file
-        with open(subdax_filename,'w') as subdax_file:
-            dax.writeXML(subdax_file)
+        proc_plugin_wf.write(subdax_filename)
+
     except:
         raise
 
