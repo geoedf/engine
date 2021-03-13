@@ -391,8 +391,8 @@ class WorkflowBuilder:
 
                 # add subdax file to DAX
                 subdax_file = File(subdax_filename)
-                subdax_filepath = '%s/%s' % (self.run_dir, subdax_filename)
-                self.rc.add_replica("local",subdax_file,subdax_filepath)
+                #subdax_filepath = '%s/%s' % (self.run_dir, subdax_filename)
+                #self.rc.add_replica("local",subdax_file,subdax_filepath)
 
                 # construct subdax for this plugin, then create a job to execute this subdax
                 try:
@@ -410,7 +410,8 @@ class WorkflowBuilder:
                     
                     stage_id = '%d' % stage_num
                     plugin_name = conn_inst.plugin_names[plugin_id]
-                    subdax_job = self.construct_plugin_subdax(stage_id, subdax_filepath, plugin_id, plugin_name, dep_vars_str, stage_refs_str,local_file_args_str, sensitive_arg_binds_str, dir_mod_refs_str)
+                    subdax_job = self.construct_plugin_subdax(stage_id, subdax_filename, plugin_id, plugin_name, dep_vars_str, stage_refs_str,local_file_args_str, sensitive_arg_binds_str, dir_mod_refs_str)
+                    subdax_job.add_outputs(subdax_file)
                     self.geoedf_wf.add_jobs(subdax_job)
 
                     # add dependencies; mkdir job and any var dependencies
@@ -460,8 +461,8 @@ class WorkflowBuilder:
 
         # add subdax file to DAX
         subdax_file = File(subdax_filename)
-        subdax_filepath = '%s/%s' % (self.run_dir, subdax_filename)
-        self.rc.add_replica("local",subdax_file,subdax_filepath)
+        #subdax_filepath = '%s/%s' % (self.run_dir, subdax_filename)
+        #self.rc.add_replica("local",subdax_file,subdax_filepath)
 
         # construct subdax for this processor plugin, then create a job to execute this subdax
         try:
@@ -490,6 +491,7 @@ class WorkflowBuilder:
             dir_mod_refs_str = self.helper.list_to_str(proc_inst.dir_modified_refs)
 
             subdax_job = self.construct_plugin_subdax(stage_id, subdax_filepath, plugin_name=plugin_name, stage_refs_str=stage_refs_str, local_file_args_str=local_file_args_str, sensitive_arg_binds_str=sensitive_arg_binds_str, dir_mod_refs_str = dir_mod_refs_str)
+            subdax_job.add_outputs(subdax_file)
             self.geoedf_wf.add_jobs(subdax_job)
 
             # add dependency on mkdir job
@@ -523,8 +525,8 @@ class WorkflowBuilder:
 
         # add subdax file to DAX
         subdax_file = File(subdax_filename)
-        subdax_filepath = '%s/%s' % (self.run_dir, subdax_filename)
-        self.rc.add_replica("local",subdax_file, subdax_filepath)
+        #subdax_filepath = '%s/%s' % (self.run_dir, subdax_filename)
+        #self.rc.add_replica("local",subdax_file, subdax_filepath)
 
         # construct subdax for this final job, then create a job to execute this subdax
         try:
@@ -538,7 +540,8 @@ class WorkflowBuilder:
             # remote job directory
             # run directory
             # target site
-            subdax_build_job.add_args(num_stages_str,subdax_filepath,self.job_dir,self.run_dir,self.target)
+            subdax_build_job.add_args(num_stages_str,subdax_filename,self.job_dir,self.run_dir,self.target)
+            subdax_build_job.add_outputs(subdax_file)
             self.geoedf_wf.add_jobs(subdax_build_job)
             
             # add dependency on current leaf job

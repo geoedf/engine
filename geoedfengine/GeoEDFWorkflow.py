@@ -73,14 +73,18 @@ class GeoEDFWorkflow:
     # executes the Pegasus DAX constructed by the builder
     def execute(self):
 
-        # set the replica catalog for this workflow
-        self.geoedf_wf.add_replica_catalog(self.builder.rc)
+        # in dev mode, we execute; otherwise just write out the workflow so we can use submit
+        if self.mode == 'dev':
+            # set the replica catalog for this workflow
+            self.geoedf_wf.add_replica_catalog(self.builder.rc)
 
-        # prepare for outputs
-        output_dir = '%s/output' % self.builder.run_dir
+            # prepare for outputs
+            output_dir = '%s/output' % self.builder.run_dir
 
-        # inform user
-        print("On successful completion, outputs will be placed at: %s" % output_dir)
+            # inform user
+            print("On successful completion, outputs will be placed at: %s" % output_dir)
         
-        # plan and execute workflow
-        self.geoedf_wf.plan(dir=self.builder.run_dir,output_dir=output_dir,submit=True).wait()
+            # plan and execute workflow
+            self.geoedf_wf.plan(dir=self.builder.run_dir,output_dir=output_dir,submit=True).wait()
+        else:
+            self.geoedf_wf.write()
