@@ -46,8 +46,12 @@ class WorkflowUtils:
             return '/data/%s' % self.workflow_id
         # else, find workflow scratch path in config
         else:
-            site_scratch_path = config['site'][target]['scratch_path']
-            return '%s/%s' % (site_scratch_path,self.workflow_id)
+            geoedf_cfg = GeoEDFConfig()
+            if geoedf_cfg.config is not None:
+                site_scratch_path = geoedf_cfg.config[target]['scratch_path']
+                return '%s/%s' % (site_scratch_path,self.workflow_id)
+            else:
+                raise GeoEDFError("Config file not present, cannot determine appropriate job directory on execution host")
 
     # create a run directory for this workflow
     def create_run_dir(self):
