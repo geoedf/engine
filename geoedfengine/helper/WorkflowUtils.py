@@ -16,8 +16,9 @@ from getpass import getpass
 from ..GeoEDFConfig import GeoEDFConfig
 
 geoedf_cfg = GeoEDFConfig()
-os.environ['SREGISTRY_CLIENT'] = geoedf_cfg.config['REGISTRY']['registry_client']
-os.environ['SREGISTRY_REGISTRY_BASE'] = geoedf_cfg.config['REGISTRY']['registry_base']
+if geoedf_cfg.config is not None:
+    os.environ['SREGISTRY_CLIENT'] = geoedf_cfg.config['REGISTRY']['registry_client']
+    os.environ['SREGISTRY_REGISTRY_BASE'] = geoedf_cfg.config['REGISTRY']['registry_base']
 
 from sregistry.main import get_client
 
@@ -45,9 +46,8 @@ class WorkflowUtils:
             return '/data/%s' % self.workflow_id
         # else, find workflow scratch path in config
         else:
-            #site_scratch_path = config['site'][target]['scratch_path']
-            site_scratch_path = ''
-            return site_scratch_path
+            site_scratch_path = config['site'][target]['scratch_path']
+            return '%s/%s' % (site_scratch_path,self.workflow_id)
 
     # create a run directory for this workflow
     def create_run_dir(self):

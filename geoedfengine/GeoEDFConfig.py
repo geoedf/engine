@@ -5,6 +5,7 @@
     Configuration options set in a geoedf.cfg file are parsed using ConfigParser    
     The geoedf.cfg file is fetched from the standard path /usr/local/config or 
     wherever the environment variable GEOEDF_CONFIG says it is present
+    if not found then assume "submit" mode where it is only used for constructing subworkflows
 """
 
 import sys
@@ -17,12 +18,13 @@ class GeoEDFConfig:
     def __init__(self):
         # creates a config object based on parsing config file
         # environment variable can be used to override standard config file path
+        # if not found, assume in "submit" mode
 
         config_filepath = str(os.getenv('GEOEDF_CONFIG','/usr/local/config/geoedf.cfg'))
 
         if not (os.path.exists(config_filepath) and os.path.isfile(config_filepath)):
-            raise GeoEDFError('Error: required GeoEDF config file not found; either set GEOEDF_CONFIG environment to correct path or make sure it is present in /usr/local/config')
-	    
-        # parse config
-        self.config = configparser.ConfigParser()
-        self.config.read(config_filepath)
+            self.config = None
+        else:
+            # parse config
+            self.config = configparser.ConfigParser()
+            self.config.read(config_filepath)

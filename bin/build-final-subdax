@@ -12,7 +12,7 @@ from Pegasus.api import *
 # subdax filepath
 # remote job directory (prefix)
 # run directory
-# target site
+# results file
 
 # basic validation on number of args
 if len(sys.argv) < 5:
@@ -23,14 +23,14 @@ num_stages = str(sys.argv[1])
 subdax_filename = str(sys.argv[2])
 job_dir = str(sys.argv[3])
 run_dir = str(sys.argv[4])
-target = str(sys.argv[5])
+final_results_filename = str(sys.argv[5])
 
 # initialize DAX, set up some basic executables
 final_sub_wf = Workflow("final-stage")
 
 # figure out what files need to be transferred back
 final_output_files = []
-final_results_filename = "%s/output/results_%s.txt" % (run_dir,num_stages)
+#final_results_filename = "%s/output/results_%s.txt" % (run_dir,num_stages)
 with open(final_results_filename,'r') as final_results_file:
     for line in final_results_file:
         output_filename = line.rstrip()

@@ -32,7 +32,9 @@ from geoedfengine.helper.WorkflowUtils import WorkflowUtils
 # arg to local file bindings encoded as JSON string
 # sensitive arg bindings
 # stage references with dir modifier applied to them
-# target site
+# public key file
+# dep var result files if any
+# stage ref result files if any
 
 # basic validation on number of args; additional ones for connector
 if len(sys.argv) < 12:
@@ -51,7 +53,7 @@ stage_refs_str = str(sys.argv[9])
 local_file_binds_str = str(sys.argv[10])
 sensitive_arg_binds_str =  str(sys.argv[11])
 dir_mod_refs_str = str(sys.argv[12])
-target = str(sys.argv[13])
+workflow_pubkey_filename = str(sys.argv[13])
 
 filter_var = ''
 
@@ -113,7 +115,7 @@ if sensitive_arg_binds_str != 'None':
     encrypted_arg_binds = dict()
 
     # process these bindings, encrypting their value
-    workflow_pubkey_filename = '%s/output/public.pem' % run_dir
+    #workflow_pubkey_filename = '%s/output/public.pem' % run_dir
 
     with open(workflow_pubkey_filename,'rb') as key_file:
         public_key = serialization.load_pem_public_key(
@@ -159,19 +161,24 @@ with open(workflow_filename,'r') as workflow_file:
         # and create a dictionary of variable/stage to value bindings
         dep_vars_exist = False
         stage_refs_exist = False
+
+        # index for rest of result file args
+        res_file_indx = 1
         
         if dep_vars_str != 'None':
             dep_vars_exist = True
             dep_vars = dep_vars_str.split(',')
             dep_var_values = dict()
-
+    
             for var in dep_vars:
                 dep_var_values[var] = []
-                var_val_filename = '%s/output/results_%s_%s.txt' % (run_dir,workflow_stage,var)
+                var_val_filename = str(sys.argv[13+res_file_indx])
+                #var_val_filename = '%s/output/results_%s_%s.txt' % (run_dir,workflow_stage,var)
                 with open(var_val_filename,'r') as var_val_file:
                     for val in var_val_file:
                         # strip trailing newline
                         dep_var_values[var].append(val.rstrip())
+                res_file_indx += 1
 
         if stage_refs_str != 'None':
             stage_refs_exist = True
@@ -179,13 +186,15 @@ with open(workflow_filename,'r') as workflow_file:
             stage_ref_values = dict()
             for stage_ref in stage_refs:
                 stage_ref_values[stage_ref] = []
-                stage_ref_val_filename = '%s/output/results_%s.txt' % (run_dir,stage_ref)
+                #stage_ref_val_filename = '%s/output/results_%s.txt' % (run_dir,stage_ref)
+                stage_ref_val_filename = str(sys.argv[13+res_file_indx])
                 with open (stage_ref_val_filename,'r') as stage_ref_val_file:
                     for val in stage_ref_val_file:
                         stage_ref_values[stage_ref].append(val.rstrip())
                 # if this stage ref has a dir modifier applied to it, only retain one value
                 if stage_ref in dir_modified_refs:
                     stage_ref_values[stage_ref] = stage_ref_values[stage_ref][:1]
+                res_file_indx += 1
                             
 
         # create binding combos from the values and stage refs

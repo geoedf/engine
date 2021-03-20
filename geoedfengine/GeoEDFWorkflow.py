@@ -33,13 +33,18 @@ class GeoEDFWorkflow:
         # fetch the config
         self.geoedf_cfg = GeoEDFConfig()
 
-        # figure out whether prod or dev mode
-        self.mode = self.geoedf_cfg.config['GENERAL']['mode']
+        # if config was not set up, assume this is in submit mode
+        # submit mode is used only for constructing sub-workflows on the submit node
+        if self.geoedf_cfg.config is not None:
+            # figure out whether prod or dev mode
+            self.mode = self.geoedf_cfg.config['GENERAL']['mode']
         
-        # set environment variables necessary for Singularity registry client
-        # these are fetched from the config
-        os.environ['SREGISTRY_CLIENT'] = self.geoedf_cfg.config['REGISTRY']['registry_client']
-        os.environ['SREGISTRY_REGISTRY_BASE'] = self.geoedf_cfg.config['REGISTRY']['registry_base']
+            # set environment variables necessary for Singularity registry client
+            # these are fetched from the config
+            os.environ['SREGISTRY_CLIENT'] = self.geoedf_cfg.config['REGISTRY']['registry_client']
+            os.environ['SREGISTRY_REGISTRY_BASE'] = self.geoedf_cfg.config['REGISTRY']['registry_base']
+        else:
+            self.mode = 'submit'
 
         # validation (1) make sure workflow file has been provided
         if def_filename is None:

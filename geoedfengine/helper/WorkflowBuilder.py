@@ -30,7 +30,7 @@ class WorkflowBuilder:
     # pass along anything that may be needed; for now, just the target execution environment
     # creates local workflow directory to hold subworkflow DAX YAMLs
     # and merge result outputs
-    # mode is between prod and dev; in dev mode, local containers are allowed
+    # mode is between prod and dev; in dev mode, local containers are allowed in dev mode
 
     def __init__(self,workflow_filename,mode='prod',target='condorpool'):
         with open(workflow_filename,'r') as workflow_file:
@@ -131,15 +131,7 @@ class WorkflowBuilder:
                               arch=Arch.X86_64,
                               os_type=OS.LINUX)
         
-        # dummy executable for final job
-        dummy = Transformation("dummy",
-                               is_stageable=True,
-                               pfn="/bin/true",
-                               site=self.target,
-                               arch=Arch.X86_64,
-                               os_type=OS.LINUX)
-
-        self.tc.add_transformations(mkdir,move,dummy)
+        self.tc.add_transformations(mkdir,move)
 
         # add connector and processor plugin containers to DAX-level TC
         # add the corresponding executable for each plguin
@@ -259,7 +251,8 @@ class WorkflowBuilder:
 
         # create a local run directory; this will be used to store subdax YAMLs and intermediate
         # outputs
-        self.run_dir = self.helper.create_run_dir()
+        # these will just be workflow outputs and we rely on Pegasus to establish linkages
+        # self.run_dir = self.helper.create_run_dir()
 
         # build the transformation catalog
         self.build_transformation_catalog()
@@ -400,6 +393,19 @@ class WorkflowBuilder:
                     # stage reference and var values files are needed as input
                     dep_vars_str = self.helper.list_to_str(conn_inst.var_dependencies[plugin_id])
                     stage_refs_str = self.helper.list_to_str(conn_inst.stage_refs[plugin_id])
+
+                    dep_var_files = []
+                    stage_ref_files = []
+
+                    # create files for the results of the dependent vars and referenced stages
+                    for dep_var in conn_inst.var_dependencies[plugin_id]:
+                        dep_var_file = File('results_%d_%s.txt' % (stage_num,dep_var))
+                        dep_var_files.append(dep_var_file)
+
+                    for stage_ref in conn_inst.stage_refs[plugin_id]:
+                        stage_ref_file = File('results_%s.txt' % stage_ref)
+                        stage_ref_files.append(stage_ref_file) 
+
                     # if local args dictionary is empty
                     if not conn_inst.local_file_args[plugin_id]:
                         local_file_args_str = 'None'
@@ -410,7 +416,7 @@ class WorkflowBuilder:
                     
                     stage_id = '%d' % stage_num
                     plugin_name = conn_inst.plugin_names[plugin_id]
-                    subdax_job = self.construct_plugin_subdax(stage_id, subdax_filename, plugin_id, plugin_name, dep_vars_str, stage_refs_str,local_file_args_str, sensitive_arg_binds_str, dir_mod_refs_str)
+                    subdax_job = self.construct_plugin_subdax(stage_id, subdax_filename, plugin_id, plugin_name, dep_vars_str, stage_refs_str,local_file_args_str, sensitive_arg_binds_str, dir_mod_refs_str, dep_var_files, stage_ref_files)
                     subdax_job.add_outputs(subdax_file)
                     self.geoedf_wf.add_jobs(subdax_job)
 
@@ -423,12 +429,11 @@ class WorkflowBuilder:
 
                     # add job executing sub-workflow to DAX
                     subdax_exec_job = SubWorkflow(subdax_file, is_planned=False)
-                    output_dir = '%s/output' % self.run_dir
+                    #output_dir = '%s/output' % self.run_dir
 
                     subdax_exec_job.add_args("-Dpegasus.integrity.checking=none",
                                              "--sites",self.target,
                                              "--output-site","local",
-                                             "--output-dir",output_dir,
                                              "--basename",stage_name)
                     self.geoedf_wf.add_jobs(subdax_exec_job)
                     # add dependency between job building subdax and job executing it
@@ -469,6 +474,14 @@ class WorkflowBuilder:
             # job constructing subdax for this stage
             # stage references are needed as input
             stage_refs_str = self.helper.list_to_str(proc_inst.stage_refs)
+
+            stage_ref_files = []
+
+            # create files for the results of the referenced stages
+            for stage_ref in proc_inst.stage_refs:
+                stage_ref_file = File('results_%s.txt' % stage_ref)
+                stage_ref_files.append(stage_ref_file) 
+
             # if local args dictionary is empty
             if not proc_inst.local_file_args:
                 local_file_args_str = 'None'
@@ -490,7 +503,7 @@ class WorkflowBuilder:
             # args with dir modifiers
             dir_mod_refs_str = self.helper.list_to_str(proc_inst.dir_modified_refs)
 
-            subdax_job = self.construct_plugin_subdax(stage_id, subdax_filepath, plugin_name=plugin_name, stage_refs_str=stage_refs_str, local_file_args_str=local_file_args_str, sensitive_arg_binds_str=sensitive_arg_binds_str, dir_mod_refs_str = dir_mod_refs_str)
+            subdax_job = self.construct_plugin_subdax(stage_id, subdax_filepath, plugin_name=plugin_name, stage_refs_str=stage_refs_str, local_file_args_str=local_file_args_str, sensitive_arg_binds_str=sensitive_arg_binds_str, dir_mod_refs_str = dir_mod_refs_str, stage_ref_files=stage_ref_files)
             subdax_job.add_outputs(subdax_file)
             self.geoedf_wf.add_jobs(subdax_job)
 
@@ -528,6 +541,9 @@ class WorkflowBuilder:
         #subdax_filepath = '%s/%s' % (self.run_dir, subdax_filename)
         #self.rc.add_replica("local",subdax_file, subdax_filepath)
 
+        # results file for last stage
+        final_stage_res_file = File('results_%d.txt' % num_stages)
+
         # construct subdax for this final job, then create a job to execute this subdax
         try:
             # job constructing final subdax
@@ -539,8 +555,8 @@ class WorkflowBuilder:
             # subdax filepath
             # remote job directory
             # run directory
-            # target site
-            subdax_build_job.add_args(num_stages_str,subdax_filename,self.job_dir,self.run_dir,self.target)
+            # previous stage results file
+            subdax_build_job.add_args(num_stages_str,subdax_filename,self.job_dir,self.run_dir,final_stage_res_file)
             subdax_build_job.add_outputs(subdax_file)
             self.geoedf_wf.add_jobs(subdax_build_job)
             
@@ -549,12 +565,11 @@ class WorkflowBuilder:
                                 
             # add job executing sub-workflow to DAX
             subdax_exec_job = SubWorkflow(subdax_filename, is_planned=False)
-            output_dir = '%s/output' % self.run_dir
+            #output_dir = '%s/output' % self.run_dir
 
             subdax_exec_job.add_args("-Dpegasus.integrity.checking=none",
                                      "--sites",self.target,
                                      "--output-site","local",
-                                     "--output-dir",output_dir,
                                      "--basename","final")
             self.geoedf_wf.add_jobs(subdax_exec_job)
             # add dependency between job building subdax and job executing it
@@ -574,7 +589,9 @@ class WorkflowBuilder:
     # stage references encoded as comma separated string
     # args bound to local files encoded as a JSON string of arg-filepath mappings
     # stage references that have dir modifiers applied to them in some binding
-    def construct_plugin_subdax(self,workflow_stage,subdax_filepath,plugin_id=None, plugin_name=None, var_deps_str=None,stage_refs_str=None,local_file_args_str=None,sensitive_arg_binds_str=None,dir_mod_refs_str=None):
+    # result files for dependent variables
+    # result files for referenced stages
+    def construct_plugin_subdax(self,workflow_stage,subdax_filepath,plugin_id=None, plugin_name=None, var_deps_str=None,stage_refs_str=None,local_file_args_str=None,sensitive_arg_binds_str=None,dir_mod_refs_str=None,dep_var_files=None,stage_ref_files=None):
 
         # construct subdax and save in subdax file
         # executable to be used differs based on whether we are
@@ -583,6 +600,9 @@ class WorkflowBuilder:
             subdax_build_job = Job("build_conn_plugin_subdax")
             # always run this job locally
             subdax_build_job.add_selector_profile(execution_site="local")
+
+	    # make the public key an input to this job
+            subdax_build_job.add_inputs(self.pubkey_file)
 
             # job arguments:
             # workflow filepath
@@ -596,8 +616,18 @@ class WorkflowBuilder:
             # stage references as comma separated string
             # arg bindings to local files as JSON string
             # stage references that have some dir modifier applied to them
-            # target site
-            subdax_build_job.add_args(self.workflow_filename,workflow_stage,plugin_id,plugin_name,subdax_filepath,self.job_dir,self.run_dir,var_deps_str,stage_refs_str,local_file_args_str,sensitive_arg_binds_str,dir_mod_refs_str,self.target)
+            # public key file
+            # dep var result files (as many as dep vars)
+            # stage ref result files (as many as stage refs)
+            subdax_build_job.add_args(self.workflow_filename,workflow_stage,plugin_id,plugin_name,subdax_filepath,self.job_dir,self.run_dir,var_deps_str,stage_refs_str,local_file_args_str,sensitive_arg_binds_str,dir_mod_refs_str,self.pubkey_file)
+            
+            if dep_var_files is not None:
+                for dep_var_file in dep_var_files:
+                    subdax_build_job.add_args(dep_var_file)
+            
+            if stage_ref_files is not None:
+                for stage_ref_file in stage_ref_files:
+                    subdax_build_job.add_args(stage_ref_file)
             
             return subdax_build_job
 
@@ -618,8 +648,13 @@ class WorkflowBuilder:
             # stage references as comma separated string
             # arg bindings to local files as JSON string
             # stage references that have some dir modifier applied to them
-            # target site
-            subdax_build_job.add_args(self.workflow_filename,workflow_stage,plugin_name,subdax_filepath,self.job_dir,self.run_dir,stage_refs_str,local_file_args_str,sensitive_arg_binds_str,dir_mod_refs_str,self.target)
+            # public key file
+            # stage ref result files (as many as stage refs)
+            subdax_build_job.add_args(self.workflow_filename,workflow_stage,plugin_name,subdax_filepath,self.job_dir,self.run_dir,stage_refs_str,local_file_args_str,sensitive_arg_binds_str,dir_mod_refs_str,self.pubkey_file)
+            
+            if stage_ref_files is not None:
+                for stage_ref_file in stage_ref_files:
+                    subdax_build_job.add_args(stage_ref_file)
             
             return subdax_build_job
 
