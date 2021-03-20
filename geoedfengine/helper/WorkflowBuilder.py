@@ -556,6 +556,7 @@ class WorkflowBuilder:
             # run directory
             # previous stage results file
             subdax_build_job.add_args(num_stages_str,subdax_filename,self.job_dir,final_stage_res_file)
+            subdax_build_job.add_inputs(final_stage_res_file)
             subdax_build_job.add_outputs(subdax_file)
             self.geoedf_wf.add_jobs(subdax_build_job)
             
@@ -623,10 +624,12 @@ class WorkflowBuilder:
             if dep_var_files is not None:
                 for dep_var_file in dep_var_files:
                     subdax_build_job.add_args(dep_var_file)
+		    subdax_build_job.add_inputs(dep_var_file)
             
             if stage_ref_files is not None:
                 for stage_ref_file in stage_ref_files:
                     subdax_build_job.add_args(stage_ref_file)
+ 		    subdax_build_job.add_inputs(stage_ref_file)
             
             return subdax_build_job
 
@@ -654,6 +657,7 @@ class WorkflowBuilder:
             if stage_ref_files is not None:
                 for stage_ref_file in stage_ref_files:
                     subdax_build_job.add_args(stage_ref_file)
+ 		    subdax_build_job.add_inputs(stage_ref_file)
             
             return subdax_build_job
 
