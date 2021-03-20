@@ -512,12 +512,11 @@ class WorkflowBuilder:
                                 
             # add job executing sub-workflow to DAX
             subdax_exec_job = SubWorkflow(subdax_file, is_planned=False)
-            output_dir = '%s/output' % self.run_dir
+            #output_dir = '%s/output' % self.run_dir
 
             subdax_exec_job.add_args("-Dpegasus.integrity.checking=none",
                                      "--sites",self.target,
                                      "--output-site","local",
-                                     "--output-dir",output_dir,
                                      "--basename",stage_name)
             self.geoedf_wf.add_jobs(subdax_exec_job)
             # add dependency between job building subdax and job executing it
@@ -556,7 +555,7 @@ class WorkflowBuilder:
             # remote job directory
             # run directory
             # previous stage results file
-            subdax_build_job.add_args(num_stages_str,subdax_filename,self.job_dir,self.run_dir,final_stage_res_file)
+            subdax_build_job.add_args(num_stages_str,subdax_filename,self.job_dir,final_stage_res_file)
             subdax_build_job.add_outputs(subdax_file)
             self.geoedf_wf.add_jobs(subdax_build_job)
             
@@ -619,7 +618,7 @@ class WorkflowBuilder:
             # public key file
             # dep var result files (as many as dep vars)
             # stage ref result files (as many as stage refs)
-            subdax_build_job.add_args(self.workflow_filename,workflow_stage,plugin_id,plugin_name,subdax_filepath,self.job_dir,self.run_dir,var_deps_str,stage_refs_str,local_file_args_str,sensitive_arg_binds_str,dir_mod_refs_str,self.pubkey_file)
+            subdax_build_job.add_args(self.workflow_filename,workflow_stage,plugin_id,plugin_name,subdax_filepath,self.job_dir,var_deps_str,stage_refs_str,local_file_args_str,sensitive_arg_binds_str,dir_mod_refs_str,self.pubkey_file)
             
             if dep_var_files is not None:
                 for dep_var_file in dep_var_files:
@@ -650,7 +649,7 @@ class WorkflowBuilder:
             # stage references that have some dir modifier applied to them
             # public key file
             # stage ref result files (as many as stage refs)
-            subdax_build_job.add_args(self.workflow_filename,workflow_stage,plugin_name,subdax_filepath,self.job_dir,self.run_dir,stage_refs_str,local_file_args_str,sensitive_arg_binds_str,dir_mod_refs_str,self.pubkey_file)
+            subdax_build_job.add_args(self.workflow_filename,workflow_stage,plugin_name,subdax_filepath,self.job_dir,stage_refs_str,local_file_args_str,sensitive_arg_binds_str,dir_mod_refs_str,self.pubkey_file)
             
             if stage_ref_files is not None:
                 for stage_ref_file in stage_ref_files:

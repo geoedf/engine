@@ -26,7 +26,6 @@ from geoedfengine.helper.WorkflowUtils import WorkflowUtils
 # plugin name to be used as Conda environment name
 # subdax filepath
 # remote job directory (prefix)
-# run directory
 # dependant vars as comma separated string
 # stage references as comma separated string
 # arg to local file bindings encoded as JSON string
@@ -47,13 +46,12 @@ plugin_id = str(sys.argv[3])
 plugin_name = str(sys.argv[4])
 subdax_filename = str(sys.argv[5])
 job_dir = str(sys.argv[6])
-run_dir = str(sys.argv[7])
-dep_vars_str = str(sys.argv[8])
-stage_refs_str = str(sys.argv[9])
-local_file_binds_str = str(sys.argv[10])
-sensitive_arg_binds_str =  str(sys.argv[11])
-dir_mod_refs_str = str(sys.argv[12])
-workflow_pubkey_filename = str(sys.argv[13])
+dep_vars_str = str(sys.argv[7])
+stage_refs_str = str(sys.argv[8])
+local_file_binds_str = str(sys.argv[9])
+sensitive_arg_binds_str =  str(sys.argv[10])
+dir_mod_refs_str = str(sys.argv[11])
+workflow_pubkey_filename = str(sys.argv[12])
 
 filter_var = ''
 
@@ -172,7 +170,7 @@ with open(workflow_filename,'r') as workflow_file:
     
             for var in dep_vars:
                 dep_var_values[var] = []
-                var_val_filename = str(sys.argv[13+res_file_indx])
+                var_val_filename = str(sys.argv[12+res_file_indx])
                 #var_val_filename = '%s/output/results_%s_%s.txt' % (run_dir,workflow_stage,var)
                 with open(var_val_filename,'r') as var_val_file:
                     for val in var_val_file:
@@ -187,7 +185,7 @@ with open(workflow_filename,'r') as workflow_file:
             for stage_ref in stage_refs:
                 stage_ref_values[stage_ref] = []
                 #stage_ref_val_filename = '%s/output/results_%s.txt' % (run_dir,stage_ref)
-                stage_ref_val_filename = str(sys.argv[13+res_file_indx])
+                stage_ref_val_filename = str(sys.argv[12+res_file_indx])
                 with open (stage_ref_val_filename,'r') as stage_ref_val_file:
                     for val in stage_ref_val_file:
                         stage_ref_values[stage_ref].append(val.rstrip())

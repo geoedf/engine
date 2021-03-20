@@ -11,19 +11,17 @@ from Pegasus.api import *
 # num stages
 # subdax filepath
 # remote job directory (prefix)
-# run directory
 # results file
 
 # basic validation on number of args
-if len(sys.argv) < 5:
+if len(sys.argv) < 4:
     raise Exception("Insufficient arguments to final subdax construction job")
 
 # extract the args
 num_stages = str(sys.argv[1])
 subdax_filename = str(sys.argv[2])
 job_dir = str(sys.argv[3])
-run_dir = str(sys.argv[4])
-final_results_filename = str(sys.argv[5])
+final_results_filename = str(sys.argv[4])
 
 # initialize DAX, set up some basic executables
 final_sub_wf = Workflow("final-stage")

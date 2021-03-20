@@ -25,7 +25,6 @@ from geoedfengine.helper.WorkflowUtils import WorkflowUtils
 # plugin name to be used to identify right executable (from right container)
 # subdax filepath
 # remote job directory (prefix)
-# run directory
 # stage references as comma separated string
 # arg to local file bindings encoded as JSON string
 # sensitive arg bindings
@@ -43,12 +42,11 @@ workflow_stage = str(sys.argv[2])
 plugin_name = str(sys.argv[3])
 subdax_filename = str(sys.argv[4])
 job_dir = str(sys.argv[5])
-run_dir = str(sys.argv[6])
-stage_refs_str = str(sys.argv[7])
-local_file_binds_str = str(sys.argv[8])
-sensitive_arg_binds_str = str(sys.argv[9])
-dir_mod_refs_str = str(sys.argv[10])
-workflow_pubkey_filename = str(sys.argv[11])
+stage_refs_str = str(sys.argv[6])
+local_file_binds_str = str(sys.argv[7])
+sensitive_arg_binds_str = str(sys.argv[8])
+dir_mod_refs_str = str(sys.argv[9])
+workflow_pubkey_filename = str(sys.argv[10])
 
 # initialize DAX, set up some basic executables
 proc_plugin_wf = Workflow("stage-%s-Processor" % workflow_stage)
@@ -170,7 +168,7 @@ with open(workflow_filename,'r') as workflow_file:
             for stage_ref in stage_refs:
                 stage_ref_values[stage_ref] = []
                 #stage_ref_val_filename = '%s/output/results_%s.txt' % (run_dir,stage_ref)
-                stage_ref_val_filename = str(sys.argv[11+res_file_indx])
+                stage_ref_val_filename = str(sys.argv[10+res_file_indx])
                 with open (stage_ref_val_filename,'r') as stage_ref_val_file:
                     for val in stage_ref_val_file:
                         stage_ref_values[stage_ref].append(val.rstrip())
