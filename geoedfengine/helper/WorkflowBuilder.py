@@ -604,7 +604,7 @@ class WorkflowBuilder:
             # args with dir modifiers
             dir_mod_refs_str = self.helper.list_to_str(proc_inst.dir_modified_refs)
 
-            subdax_job = self.construct_plugin_subdax(stage_id, subdax_filepath, plugin_name=plugin_name, stage_refs_str=stage_refs_str, local_file_args_str=local_file_args_str, sensitive_arg_binds_str=sensitive_arg_binds_str, dir_mod_refs_str = dir_mod_refs_str, stage_ref_files=stage_ref_files)
+            subdax_job = self.construct_plugin_subdax(stage_id, subdax_filename, plugin_name=plugin_name, stage_refs_str=stage_refs_str, local_file_args_str=local_file_args_str, sensitive_arg_binds_str=sensitive_arg_binds_str, dir_mod_refs_str = dir_mod_refs_str, stage_ref_files=stage_ref_files)
             subdax_job.add_outputs(subdax_file,stage_out=False,register_replica=False)
             self.geoedf_wf.add_jobs(subdax_job)
 
