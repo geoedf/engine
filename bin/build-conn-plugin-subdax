@@ -384,7 +384,7 @@ with open(workflow_filename,'r') as workflow_file:
                 merge_job.add_args(res_file)
             merged_res_filename = 'results_%s_%s.txt' % (workflow_stage,filter_var)
             merged_res_file = File(merged_res_filename)
-            merge_job.add_outputs(merged_res_file)
+            merge_job.add_outputs(merged_res_file,register_replica=False)
             conn_plugin_wf.add_jobs(merge_job)
             conn_plugin_wf.add_dependency(merge_job,parents=plugin_jobs)
 
@@ -396,7 +396,7 @@ with open(workflow_filename,'r') as workflow_file:
             collect_job.add_args(output_dir)
             collect_res_filename = 'results_%s.txt' % workflow_stage
             collect_res_file = File(collect_res_filename)
-            collect_job.add_outputs(collect_res_file)
+            collect_job.add_outputs(collect_res_file,register_replica=False)
             conn_plugin_wf.add_jobs(collect_job)
             conn_plugin_wf.add_dependency(collect_job,parents=plugin_jobs)
 

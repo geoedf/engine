@@ -26,9 +26,8 @@ from .GeoEDFConfig import GeoEDFConfig
 class GeoEDFWorkflow:
 
     # def_filename is a YAML file that encodes the workflow
-    # target corresponds to the config entry in an execution config file
-    # possible values are 'local', 'geoedf-public', 'cluster#', or 'condorpool' (for testing)
-    def __init__(self,def_filename=None,target='condorpool'):
+    # target is determined from the config file
+    def __init__(self,def_filename=None):
 
         # fetch the config
         self.geoedf_cfg = GeoEDFConfig()
@@ -38,6 +37,9 @@ class GeoEDFWorkflow:
         if self.geoedf_cfg.config is not None:
             # figure out whether prod or dev mode
             self.mode = self.geoedf_cfg.config['GENERAL']['mode']
+
+            # figure out workflow execution target
+            self.target = self.geoedf_cfg.config['GENERAL']['target']
         
             # set environment variables necessary for Singularity registry client
             # these are fetched from the config
@@ -61,7 +63,7 @@ class GeoEDFWorkflow:
         self.helper.validate_workflow(self.workflow_dict)
 
         # after validation suceeds, create a builder for this workflow
-        self.builder = WorkflowBuilder(def_filename,self.mode,target)
+        self.builder = WorkflowBuilder(def_filename,self.mode,self.target)
 
         # build the concrete Pegasus workflow
         self.builder.build_pegasus_dax()
@@ -71,9 +73,6 @@ class GeoEDFWorkflow:
 
         # get the dax
         self.geoedf_wf = self.builder.geoedf_wf
-
-        # execution target
-        self.target = target
 
     # executes the Pegasus DAX constructed by the builder
     def execute(self):

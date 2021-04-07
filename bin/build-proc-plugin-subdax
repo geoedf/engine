@@ -280,7 +280,7 @@ with open(workflow_filename,'r') as workflow_file:
         collect_job.add_args(output_dir)
         collect_res_filename = 'results_%s.txt' % workflow_stage
         collect_res_file = File(collect_res_filename)
-        collect_job.add_outputs(collect_res_file)
+        collect_job.add_outputs(collect_res_file,register_replica=False)
         proc_plugin_wf.add_jobs(collect_job)
         proc_plugin_wf.add_dependency(collect_job,parents=plugin_jobs)
 

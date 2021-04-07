@@ -26,6 +26,9 @@ from .GeoEDFError import GeoEDFError
 
 class WorkflowUtils:
 
+    def __init__(self):
+        self.cfg = GeoEDFConfig()
+
     # generate a unique ID based on the epoch time
     # the ID is used as a suffix for all workflow and job directories
     def gen_workflow_id(self):
@@ -33,10 +36,25 @@ class WorkflowUtils:
         return self.workflow_id
 
     # finds the path to an executable by running "which"
-    def find_exec_path(self,exec_name):
+    def find_exec_path(self,exec_name,target='condorpool'):
         try:
-            ret = subprocess.check_output(["which",exec_name])
-            return ret.decode('utf-8').rstrip()
+            # for local and condor execution, find local path
+            if target == 'condorpool' or target == 'local':
+                ret = dict()
+                exec_path = subprocess.check_output(["which",exec_name])
+                ret['exec_path'] = exec_path.decode('utf-8').rstrip()
+                ret['python_path'] = os.getenv('PYTHONPATH')
+                return ret
+            else: # need to determine path on submit host since that is the "local" site
+                # if submit configuration is provided, determine path from there
+                if 'submit' in self.cfg.config:
+                    ret = dict()
+                    exec_path = '%s/%s' % (self.cfg.config['submit']['exec_path'],exec_name)
+                    ret['exec_path'] = exec_path
+                    ret['python_path'] = self.cfg.config['submit']['python_path']
+                    return ret
+                else:
+                    raise GeoEDFError("Submit execution path not provided in config; this is required for non-local executions")
         except subprocess.CalledProcessError:
             raise GeoEDFError("Error occurred in finding the executable %s. This should not happen if the workflow engine was successfully installed!!!" % exec_name)
 
@@ -46,12 +64,25 @@ class WorkflowUtils:
             return '/data/%s' % self.workflow_id
         # else, find workflow scratch path in config
         else:
-            geoedf_cfg = GeoEDFConfig()
-            if geoedf_cfg.config is not None:
-                site_scratch_path = geoedf_cfg.config[target]['scratch_path']
+            if self.cfg.config is not None:
+                site_scratch_path = self.cfg.config[target]['scratch_path']
                 return '%s/%s' % (site_scratch_path,self.workflow_id)
             else:
                 raise GeoEDFError("Config file not present, cannot determine appropriate job directory on execution host")
+
+    # determine various config parameters necessary for creating TC for given execution target
+    # submit host parameters are returned only for non-local targets
+    def target_tc_config(self,target):
+        if target == 'local' or target == 'condorpool':
+            return None
+        else:
+            res = dict()
+            if self.cfg.config is not None:
+                res['os_release'] = self.cfg.config[target]['os_release']
+                res['os_version'] = self.cfg.config[target]['os_version']
+                return res
+            else:
+                return None
 
     # create a run directory for this workflow
     def create_run_dir(self):

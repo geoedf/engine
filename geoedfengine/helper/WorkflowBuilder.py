@@ -54,6 +54,11 @@ class WorkflowBuilder:
         # initialize the transformation catalog
         self.tc = TransformationCatalog()
 
+        # specific sites may need additional parameters like OS version, release etc.
+        # so that the executable can match the site entry
+        # fetch these for target from config file
+        tc_cfg = self.helper.target_tc_config(self.target)
+
         # Create executables and add them to the TC
         # first a few common executables
 
@@ -65,71 +70,124 @@ class WorkflowBuilder:
         self.tc.add_containers(utils_container)
 
         # create an executable for merging outputs of filters
-        merge_filter_out_exec = Transformation("merge.py",
-                                               site=self.target,
-                                               pfn="/usr/local/bin/merge.py",
-                                               is_stageable=False,
-                                               container=utils_container)
+        if tc_cfg is not None:
+            merge_filter_out_exec = Transformation("merge.py",
+                                                   site=self.target,
+                                                   pfn="/usr/local/bin/merge.py",
+                                                   is_stageable=False,
+                                                   arch=Arch.X86_64,
+                                                   os_type=os.LINUX,
+                                                   os_release=tc_cfg['os_release'],
+                                                   os_version=tc_cfg['os_version'],
+                                                   container=utils_container)
+        else:
+            merge_filter_out_exec = Transformation("merge.py",
+                                                   site=self.target,
+                                                   pfn="/usr/local/bin/merge.py",
+                                                   is_stageable=False,
+                                                   container=utils_container)
 
         # create an executable for collecting the list of names of files that have been produced by a plugin
-        collect_input_out_exec = Transformation("collect.py",
-                                                site=self.target,
-                                                pfn="/usr/local/bin/collect.py",
-                                                is_stageable=False,
-                                                container=utils_container)
+        if tc_cfg is not None:
+            collect_input_out_exec = Transformation("collect.py",
+                                                    site=self.target,
+                                                    pfn="/usr/local/bin/collect.py",
+                                                    is_stageable=False,
+                                                    arch=Arch.X86_64,
+                                                    os_type=os.LINUX,
+                                                    os_release=tc_cfg['os_release'],
+                                                    os_version=tc_cfg['os_version'],
+                                                    container=utils_container)
+        else:
+            collect_input_out_exec = Transformation("collect.py",
+                                                    site=self.target,
+                                                    pfn="/usr/local/bin/collect.py",
+                                                    is_stageable=False,
+                                                    container=utils_container)
 
         # create an executable for generating a public-private key pair
-        gen_keypair_exec = Transformation("gen_keypair",
-                                          site=self.target,
-                                          pfn="/usr/local/bin/gen-keypair.py",
-                                          is_stageable=False,
-                                          container=utils_container)
+        if tc_cfg is not None:
+            gen_keypair_exec = Transformation("gen_keypair",
+                                              site=self.target,
+                                              pfn="/usr/local/bin/gen-keypair.py",
+                                              is_stageable=False,
+                                              arch=Arch.X86_64,
+                                              os_type=os.LINUX,
+                                              os_release=tc_cfg['os_release'],
+                                              os_version=tc_cfg['os_version'],
+                                              container=utils_container)
+        else:
+            gen_keypair_exec = Transformation("gen_keypair",
+                                              site=self.target,
+                                              pfn="/usr/local/bin/gen-keypair.py",
+                                              is_stageable=False,
+                                              container=utils_container)
 
         self.tc.add_transformations(merge_filter_out_exec,collect_input_out_exec,gen_keypair_exec)
 
         # executables that create connector and processor plugin subdax
         # path to executable is determined by running "which"
         # executables are "bin" scripts installed via engine package
-        conn_plugin_builder_path = self.helper.find_exec_path("build-conn-plugin-subdax")
+        conn_plugin_builder_cfg = self.helper.find_exec_path("build-conn-plugin-subdax",self.target)
         build_conn_plugin_subdax = Transformation("build_conn_plugin_subdax",
                                                   site="local",
                                                   is_stageable=False,
-                                                  pfn=conn_plugin_builder_path)
-        build_conn_plugin_subdax.add_profiles(Namespace.ENV,PYTHONPATH=os.getenv('PYTHONPATH'))
+                                                  pfn=conn_plugin_builder_cfg['exec_path'])
+        build_conn_plugin_subdax.add_profiles(Namespace.ENV,PYTHONPATH=conn_plugin_builder_cfg['python_path'])
 
-        proc_plugin_builder_path = self.helper.find_exec_path("build-proc-plugin-subdax")
+        proc_plugin_builder_cfg = self.helper.find_exec_path("build-proc-plugin-subdax",self.target)
         build_proc_plugin_subdax = Transformation("build_proc_plugin_subdax",
                                                   site="local",
                                                   is_stageable=False,
-                                                  pfn=proc_plugin_builder_path)
-        build_proc_plugin_subdax.add_profiles(Namespace.ENV,PYTHONPATH=os.getenv('PYTHONPATH'))
+                                                  pfn=proc_plugin_builder_cfg['exec_path'])
+        build_proc_plugin_subdax.add_profiles(Namespace.ENV,PYTHONPATH=proc_plugin_builder_cfg['python_path'])
 
         # executable to build final subdax that simply returns outputs
-        final_builder_path = self.helper.find_exec_path("build-final-subdax")
+        final_builder_cfg = self.helper.find_exec_path("build-final-subdax",self.target)
         build_final_subdax = Transformation("build_final_subdax",
                                             site="local",
                                             is_stageable=False,
-                                            pfn=final_builder_path)
-        build_final_subdax.add_profiles(Namespace.ENV,PYTHONPATH=os.getenv('PYTHONPATH'))
+                                            pfn=final_builder_cfg['exec_path'])
+        build_final_subdax.add_profiles(Namespace.ENV,PYTHONPATH=final_builder_cfg['python_path'])
 
         self.tc.add_transformations(build_conn_plugin_subdax,build_proc_plugin_subdax,build_final_subdax)
 
         # create an executable for making directories for each workflow stage
         # needs to be at object-level since we need to use the target for the PFN
-        mkdir = Transformation("mkdir",
-                               is_stageable=False,
-                               pfn="/bin/mkdir",
-                               site=self.target,
-                               arch=Arch.X86_64,
-                               os_type=OS.LINUX)
+        if tc_cfg is not None:
+            mkdir = Transformation("mkdir",
+                                   is_stageable=False,
+                                   pfn="/bin/mkdir",
+                                   site=self.target,
+                                   arch=Arch.X86_64,
+                                   os_type=OS.LINUX,
+                                   os_release=tc_cfg['os_release'],
+                                   os_version=tc_cfg['os_version'])
+        else:
+            mkdir = Transformation("mkdir",
+                                   is_stageable=False,
+                                   pfn="/bin/mkdir",
+                                   site=self.target,
+                                   arch=Arch.X86_64,
+                                   os_type=OS.LINUX)
 
         # executable for final job that moves files to running dir so they can be returned
-        move = Transformation("move",
-                              is_stageable=True,
-                              pfn="/bin/mv",
-                              site=self.target,
-                              arch=Arch.X86_64,
-                              os_type=OS.LINUX)
+        if tc_cfg is not None:
+            move = Transformation("move",
+                                  is_stageable=False,
+                                  pfn="/bin/mv",
+                                  site=self.target,
+                                  arch=Arch.X86_64,
+                                  os_type=OS.LINUX,
+                                  os_release=tc_cfg['os_release'],
+                                  os_version=tc_cfg['os_version'])
+        else:
+            move = Transformation("move",
+                                  is_stageable=False,
+                                  pfn="/bin/mv",
+                                  site=self.target,
+                                  arch=Arch.X86_64,
+                                  os_type=OS.LINUX)
         
         self.tc.add_transformations(mkdir,move)
 
@@ -163,11 +221,22 @@ class WorkflowBuilder:
                                                image_site="local",
                                                mounts=["%s:/data/%s" % (self.job_dir,self.workflow_id)])
 
-                    plugin_exec = Transformation(exec_name,
-                                               is_stageable=False,
-                                               site=self.target,
-                                               pfn="/usr/local/bin/run-workflow-stage.sh",
-                                               container=plugin_container)
+                    if tc_cfg is not None:
+                        plugin_exec = Transformation(exec_name,
+                                                   is_stageable=False,
+                                                   arch=Arch.X86_64,
+                                                   os_type=OS.LINUX,
+                                                   os_release=tc_cfg['os_release'],
+                                                   os_version=tc_cfg['os_version'],
+                                                   site=self.target,
+                                                   pfn="/usr/local/bin/run-workflow-stage.sh",
+                                                   container=plugin_container)
+                    else:
+                        plugin_exec = Transformation(exec_name,
+                                                   is_stageable=False,
+                                                   site=self.target,
+                                                   pfn="/usr/local/bin/run-workflow-stage.sh",
+                                                   container=plugin_container)
                     
                     self.tc.add_containers(plugin_container)
                     self.tc.add_transformations(plugin_exec)
@@ -193,11 +262,22 @@ class WorkflowBuilder:
 
             self.tc.add_containers(conn_container)
 
-            conn_exec = Transformation(exec_name,
-                                       is_stageable=False,
-                                       site=self.target,
-                                       pfn="/usr/local/bin/run-workflow-stage.sh",
-                                       container=conn_container)
+            if tc_cfg is not None:
+                conn_exec = Transformation(exec_name,
+                                           is_stageable=False,
+                                           site=self.target,
+                                           arch=Arch.X86_64,
+                                           os_type=OS.LINUX,
+                                           os_release=tc_cfg['os_release'],
+                                           os_version=tc_cfg['os_version'],
+                                           pfn="/usr/local/bin/run-workflow-stage.sh",
+                                           container=conn_container)
+            else:
+                conn_exec = Transformation(exec_name,
+                                           is_stageable=False,
+                                           site=self.target,
+                                           pfn="/usr/local/bin/run-workflow-stage.sh",
+                                           container=conn_container)
             
             self.tc.add_transformations(conn_exec)
 
@@ -217,11 +297,22 @@ class WorkflowBuilder:
 
             self.tc.add_containers(proc_container)
 
-            proc_exec = Transformation(exec_name,
-                                       is_stageable=False,
-                                       site=self.target,
-                                       pfn="/usr/local/bin/run-workflow-stage.sh",
-                                       container=proc_container)
+            if tc_cfg is not None:
+                proc_exec = Transformation(exec_name,
+                                           is_stageable=False,
+                                           site=self.target,
+                                           arch=Arch.X86_64,
+                                           os_type=OS.LINUX,
+                                           os_release=tc_cfg['os_release'],
+                                           os_version=tc_cfg['os_version'],
+                                           pfn="/usr/local/bin/run-workflow-stage.sh",
+                                           container=proc_container)
+            else:
+                proc_exec = Transformation(exec_name,
+                                           is_stageable=False,
+                                           site=self.target,
+                                           pfn="/usr/local/bin/run-workflow-stage.sh",
+                                           container=proc_container)
             
             self.tc.add_transformations(proc_exec)
 
@@ -415,9 +506,15 @@ class WorkflowBuilder:
                     dir_mod_refs_str = self.helper.list_to_str(conn_inst.dir_modified_refs[plugin_id])
                     
                     stage_id = '%d' % stage_num
+                    if ':' in plugin_id:
+                        res_filename = 'results_%d_%s.txt' % (stage_num,plugin_id.split(':')[1])
+                    else:
+                        res_filename = 'results_%d.txt' % stage_num
+                    stage_res_file = File(res_filename)
+
                     plugin_name = conn_inst.plugin_names[plugin_id]
                     subdax_job = self.construct_plugin_subdax(stage_id, subdax_filename, plugin_id, plugin_name, dep_vars_str, stage_refs_str,local_file_args_str, sensitive_arg_binds_str, dir_mod_refs_str, dep_var_files, stage_ref_files)
-                    subdax_job.add_outputs(subdax_file)
+                    subdax_job.add_outputs(subdax_file,stage_out=False,register_replica=False)
                     self.geoedf_wf.add_jobs(subdax_job)
 
                     # add dependencies; mkdir job and any var dependencies
@@ -434,7 +531,9 @@ class WorkflowBuilder:
                     subdax_exec_job.add_args("-Dpegasus.integrity.checking=none",
                                              "--sites",self.target,
                                              "--output-site","local",
-                                             "--basename",stage_name)
+                                             "--basename",stage_name,
+                                             "--force")
+                    subdax_exec_job.add_outputs(stage_res_file,stage_out=False,register_replica=False)
                     self.geoedf_wf.add_jobs(subdax_exec_job)
                     # add dependency between job building subdax and job executing it
                     self.geoedf_wf.add_dependency(subdax_exec_job,parents=[subdax_job])
@@ -491,6 +590,8 @@ class WorkflowBuilder:
             stage_id = '%d' % stage_num
             plugin_name = proc_inst.plugin_name
 
+            stage_res_file = File('results_%s.txt' % stage_id)
+
             # if this plugin has any sensitive args, prompt the user for values
             # gets a JSON back
             plugin_sensitive_args = proc_inst.sensitive_args
@@ -504,7 +605,7 @@ class WorkflowBuilder:
             dir_mod_refs_str = self.helper.list_to_str(proc_inst.dir_modified_refs)
 
             subdax_job = self.construct_plugin_subdax(stage_id, subdax_filepath, plugin_name=plugin_name, stage_refs_str=stage_refs_str, local_file_args_str=local_file_args_str, sensitive_arg_binds_str=sensitive_arg_binds_str, dir_mod_refs_str = dir_mod_refs_str, stage_ref_files=stage_ref_files)
-            subdax_job.add_outputs(subdax_file)
+            subdax_job.add_outputs(subdax_file,stage_out=False,register_replica=False)
             self.geoedf_wf.add_jobs(subdax_job)
 
             # add dependency on mkdir job
@@ -517,7 +618,9 @@ class WorkflowBuilder:
             subdax_exec_job.add_args("-Dpegasus.integrity.checking=none",
                                      "--sites",self.target,
                                      "--output-site","local",
-                                     "--basename",stage_name)
+                                     "--basename",stage_name,
+                                     "--force")
+            subdax_exec_job.add_outputs(stage_res_file,stage_out=False,register_replica=False)
             self.geoedf_wf.add_jobs(subdax_exec_job)
             # add dependency between job building subdax and job executing it
             self.geoedf_wf.add_dependency(subdax_exec_job,parents=[subdax_job])
@@ -557,7 +660,7 @@ class WorkflowBuilder:
             # previous stage results file
             subdax_build_job.add_args(num_stages_str,subdax_filename,self.job_dir,final_stage_res_file)
             subdax_build_job.add_inputs(final_stage_res_file)
-            subdax_build_job.add_outputs(subdax_file)
+            subdax_build_job.add_outputs(subdax_file,stage_out=False,register_replica=False)
             self.geoedf_wf.add_jobs(subdax_build_job)
             
             # add dependency on current leaf job
