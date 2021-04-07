@@ -76,7 +76,7 @@ class WorkflowBuilder:
                                                    pfn="/usr/local/bin/merge.py",
                                                    is_stageable=False,
                                                    arch=Arch.X86_64,
-                                                   os_type=os.LINUX,
+                                                   os_type=OS.LINUX,
                                                    os_release=tc_cfg['os_release'],
                                                    os_version=tc_cfg['os_version'],
                                                    container=utils_container)
@@ -94,7 +94,7 @@ class WorkflowBuilder:
                                                     pfn="/usr/local/bin/collect.py",
                                                     is_stageable=False,
                                                     arch=Arch.X86_64,
-                                                    os_type=os.LINUX,
+                                                    os_type=OS.LINUX,
                                                     os_release=tc_cfg['os_release'],
                                                     os_version=tc_cfg['os_version'],
                                                     container=utils_container)
@@ -112,7 +112,7 @@ class WorkflowBuilder:
                                               pfn="/usr/local/bin/gen-keypair.py",
                                               is_stageable=False,
                                               arch=Arch.X86_64,
-                                              os_type=os.LINUX,
+                                              os_type=OS.LINUX,
                                               os_release=tc_cfg['os_release'],
                                               os_version=tc_cfg['os_version'],
                                               container=utils_container)

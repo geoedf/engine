@@ -24,6 +24,7 @@ class GeoEDFConfig:
 
         if not (os.path.exists(config_filepath) and os.path.isfile(config_filepath)):
             self.config = None
+            print("Could not find GeoEDF config file; unless this is the submit host, workflows will fail!")
         else:
             # parse config
             self.config = configparser.ConfigParser()

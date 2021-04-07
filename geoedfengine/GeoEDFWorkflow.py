@@ -47,6 +47,7 @@ class GeoEDFWorkflow:
             os.environ['SREGISTRY_REGISTRY_BASE'] = self.geoedf_cfg.config['REGISTRY']['registry_base']
         else:
             self.mode = 'submit'
+            self.target = 'condorpool'
 
         # validation (1) make sure workflow file has been provided
         if def_filename is None:
