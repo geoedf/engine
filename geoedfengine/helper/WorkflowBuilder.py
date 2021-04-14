@@ -65,7 +65,7 @@ class WorkflowBuilder:
         # these are provided by the workflowutils container
         utils_container = Container("workflowutils",
                                     Container.SINGULARITY,
-                                    image="library://geoedfproject/framework/workflowutils:latest",
+                                    image="library://framework/workflowutils:latest",
                                     mounts=["%s:/data/%s" % (self.job_dir,self.workflow_id)])
         self.tc.add_containers(utils_container)
 
@@ -316,7 +316,7 @@ class WorkflowBuilder:
             
             self.tc.add_transformations(proc_exec)
 
-        self.tc.write()
+        self.tc.write('%s/transformation.yml' % self.run_dir)
             
     # build replica catalog
     def build_replica_catalog(self):
@@ -343,13 +343,15 @@ class WorkflowBuilder:
         # create a local run directory; this will be used to store subdax YAMLs and intermediate
         # outputs
         # these will just be workflow outputs and we rely on Pegasus to establish linkages
-        # self.run_dir = self.helper.create_run_dir()
+        # in production mode, this will be used to store the workflow and TC and receive outputs
+        # from submit
+        self.run_dir = self.helper.create_run_dir()
 
         # build the transformation catalog
         self.build_transformation_catalog()
 
-        # build replica catalog
-        self.build_replica_catalog()
+        # build replica catalog (turning off since we don't have a need for a RC)
+        # self.build_replica_catalog()
 
         # leaf job used to manage dependencies across stages
         self.leaf_job = None

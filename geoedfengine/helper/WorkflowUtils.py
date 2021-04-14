@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 
 """ Provides low-level utilities used by the WorkflowBuilder class
-    Also provides a wrapper for Pegasus commands that need to be 
-    run in a shell
+    Also provides a wrapper for interacting with the middleware (broker)
+    responsible for executing and monitoring workflows
 """
 
 import sys
@@ -14,6 +14,7 @@ import subprocess
 import time
 from getpass import getpass
 from ..GeoEDFConfig import GeoEDFConfig
+from .SubmitBroker import SubmitBroker
 
 geoedf_cfg = GeoEDFConfig()
 if geoedf_cfg.config is not None:
@@ -348,16 +349,18 @@ class WorkflowUtils:
                 procs[plugin_name] = cont_uri
 
         return (conns,procs)
-           
 
-       
-            
-            
-            
-            
-                
-        
+    # function to execute a workflow via the broker
+    # in the case of HUBzero submit, the command line will be used
+    # to run the necessary submit commands
+    def execute_workflow(workflow_dir,broker):
+        if broker == 'submit':
+            submitBroker = SubmitBroker()
+            submitBroker.plan_and_submit(workflow_dir)
 
-
-
+    # function to monitor a workflow's status via the broker
+    def monitor_workflow(workflow_dir,broker):
+        if broker == 'submit':
+            submitBroker = SubmitBroker()
+            submitBroker.monitor_status(workflow_dir)
 
