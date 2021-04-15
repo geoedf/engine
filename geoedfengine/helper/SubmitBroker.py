@@ -14,7 +14,7 @@ class SubmitBroker:
     # subprocess is used to run the command-line submit tool
     # future versions will use the submit Python client
     
-    def plan_and_submit(workflow_dir):
+    def plan_and_submit(self,workflow_dir):
 
         # assume TC and workflow YML files are in the workflow_dir
         try:
@@ -26,7 +26,7 @@ class SubmitBroker:
     # for now we only return a binary, checking to see if pegasus.analysis 
     # exists in workflow_dir
     
-    def monitor_status(workflow_dir):
+    def monitor_status(self,workflow_dir):
         if os.path.exists('%s/pegasus.analysis' % workflow_dir):
             print("workflow is complete; check pegasus.analysis file in this directory to check success")
         else:

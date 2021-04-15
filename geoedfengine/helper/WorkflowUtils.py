@@ -353,13 +353,13 @@ class WorkflowUtils:
     # function to execute a workflow via the broker
     # in the case of HUBzero submit, the command line will be used
     # to run the necessary submit commands
-    def execute_workflow(workflow_dir,broker):
+    def execute_workflow(self,workflow_dir,broker):
         if broker == 'submit':
             submitBroker = SubmitBroker()
             submitBroker.plan_and_submit(workflow_dir)
 
     # function to monitor a workflow's status via the broker
-    def monitor_workflow(workflow_dir,broker):
+    def monitor_workflow(self,workflow_dir,broker):
         if broker == 'submit':
             submitBroker = SubmitBroker()
             submitBroker.monitor_status(workflow_dir)
