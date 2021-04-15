@@ -316,7 +316,7 @@ class WorkflowBuilder:
             
             self.tc.add_transformations(proc_exec)
 
-        self.tc.write('%s/transformation.yml' % self.run_dir)
+        self.tc.write('%s/transformations.yml' % self.run_dir)
             
     # build replica catalog
     def build_replica_catalog(self):

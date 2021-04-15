@@ -109,7 +109,9 @@ class GeoEDFWorkflow:
             self.geoedf_wf.plan(dir=self.builder.run_dir,output_dir=output_dir,submit=True).wait()
         else:
             self.geoedf_wf.write('%s/workflow.yml' % self.builder.run_dir)
+            print("Workflow created and written to %s" % self.builder.run_dir)
             self.helper.execute_workflow(self.builder.run_dir,self.broker)
+            print("Workflow submitted for execution; outputs will be written to %s" % self.builder.run_dir)
 
     # monitor workflow execution
     def monitor(self):
