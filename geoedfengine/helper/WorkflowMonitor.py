@@ -10,7 +10,7 @@
 import sys
 import os
 import sqlite3
-from ..GeoEFConfig import GeoEDFConfig
+from ..GeoEDFConfig import GeoEDFConfig
 from .GeoEDFError import GeoEDFError
 
 class WorkflowMonitor:
@@ -149,6 +149,8 @@ class WorkflowMonitor:
                             continue
                         else:
                             return current_task
+        except:
+            raise GeoEDFError("Exception occurred when trying to determine current workflow task!!!")
 
     # method to monitor a workflow's progress
     # workflow name is optional; when Null all workflows matching tool_shortname
@@ -191,5 +193,3 @@ class WorkflowMonitor:
             status_res[row['dax_label']] = curr_task
 
         return status_res
-
-            
