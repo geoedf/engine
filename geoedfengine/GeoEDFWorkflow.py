@@ -21,6 +21,7 @@ from Pegasus.api import *
 from .helper.GeoEDFError import GeoEDFError
 from .helper.WorkflowBuilder import WorkflowBuilder
 from .helper.WorkflowUtils import WorkflowUtils
+from .helper.WorkflowMonitor import WorkflowMonitor
 from .GeoEDFConfig import GeoEDFConfig
 
 class GeoEDFWorkflow:
@@ -31,12 +32,24 @@ class GeoEDFWorkflow:
     # workflow_dir is used to instantiate a prior workflow and monitor it
     # either one of def_filename or workflow_dir is required
     # def_filename takes precedence
-    def __init__(self,def_filename=None,workflow_dir=None):
+    def __init__(self,def_filename=None,workflow_name=None):
+
+        # validation (0) make sure workflow file has been provided
+        # if not, check if workflow_name is provided, in this case we simply monitor
+        if def_filename is None:
+            if workflow_name is None:
+                raise GeoEDFError('Error: a workflow YAML file or a submitted workflow name must be provided!')
+            else:
+                self.workflow_name = workflow_name
+                self.mode = 'monitor'
+                self.target = None
+                # short circuit
+                return
 
         # fetch the config
         self.geoedf_cfg = GeoEDFConfig()
 
-        # validation (0) if config was not set up, assume this is in submit mode
+        # validation (1) if config was not set up, assume this is in submit mode
         # submit mode is used only for constructing sub-workflows on the submit node
         if self.geoedf_cfg.config is not None:
             # figure out whether prod or dev mode
@@ -60,18 +73,6 @@ class GeoEDFWorkflow:
         # get a helper; this happens first since we need it for creation, execution, and monitoring
         self.helper = WorkflowUtils()
 
-        # validation (1) make sure workflow file has been provided
-        # if not, check if workflow_dir is provided, in this case we simply monitor
-        if def_filename is None:
-            if workflow_dir is None:
-                raise GeoEDFError('Error: a workflow YAML file or workflow directory must be provided!')
-            else:
-                self.workflow_dir = workflow_dir
-                self.mode = 'monitor'
-                self.target = None
-                # short circuit
-                return
-
         # create a GeoEDF workflow object from the input file
         with open(def_filename,'r') as workflow_file:
             self.workflow_dict = yaml.load(workflow_file,Loader=FullLoader)
@@ -94,6 +95,11 @@ class GeoEDFWorkflow:
     # executes the Pegasus DAX constructed by the builder
     def execute(self):
 
+        # in monitor mode, we do not allow execution; print message and return
+        if self.mode == 'monitor':
+            print("This workflow has already been submitted for execution; use the monitor() method instead.")
+            return
+
         # in dev mode, we execute; otherwise just write out the workflow so we can use submit
         if self.mode == 'dev':
             # set the replica catalog for this workflow
@@ -109,11 +115,19 @@ class GeoEDFWorkflow:
             self.geoedf_wf.plan(dir=self.builder.run_dir,output_dir=output_dir,submit=True).wait()
         else:
             self.geoedf_wf.write('%s/workflow.yml' % self.builder.run_dir)
-            print("Workflow created and written to %s" % self.builder.run_dir)
+            print("Workflow %s created" % self.geoedf_wf.name)
             self.helper.execute_workflow(self.builder.run_dir,self.broker)
             print("Workflow submitted for execution; outputs will be written to %s" % self.builder.run_dir)
+            # initialize workflow monitoring
+            self.workflow_monitor = WorkflowMonitor()
+            # start monitoring this new workflow
+            self.workflow_monitor.start_monitor(self.geoedf_wf.name)
+            print("Workflow execution can be monitored using the workflow name %s and the monitor() method" % self.geoedf_wf.name)
 
     # monitor workflow execution
     def monitor(self):
-        # use workflow util to monitor progress via broker commands
-        self.helper.monitor_workflow(self.workflow_dir,self.broker)
+        # use the new workflow monitor class to monitor workflow execution
+        # by querying the workflow DBs
+        self.workflow_monitor = WorkflowMonitor()
+        monitor_res = self.workflow_monitor.monitor_status(self.workflow_name)
+        print(monitor_res)

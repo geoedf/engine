@@ -87,16 +87,18 @@ class WorkflowUtils:
 
     # create a run directory for this workflow
     def create_run_dir(self):
-        # create under current directory
-        full_path = '%s/%s' % (os.getcwd(),self.workflow_id)
-
-        try:
-            mkdir_proc = subprocess.call(["mkdir","-p",full_path])
-            # set environment variable
-            os.environ["RUN_DIR"] = full_path
-            return full_path
-        except subprocess.CalledProcessError:
-            raise GeoEDFError("Error occurred in creating run directory for this workflow!!!")
+        # create under home directory
+        if os.getenv('HOME') is not None:
+            full_path = '%s/geoedf/workflows/%s' % (os.getenv('HOME'),self.workflow_id)
+            try:
+                mkdir_proc = subprocess.call(["mkdir","-p",full_path])
+                # set environment variable
+                os.environ["RUN_DIR"] = full_path
+                return full_path
+            except subprocess.CalledProcessError:
+                raise GeoEDFError("Error occurred in creating run directory for this workflow!!!")
+        else:
+           raise GeoEDFError("Could not determine user home directory; cannot create workflow directory!!!")        
 
     # validate this workflow
     # semantic validation occurs when processing each plugin
