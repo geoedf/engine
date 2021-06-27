@@ -144,7 +144,7 @@ class WorkflowMonitor:
                         # check to see if JOB_SUCCESS and POST_SCRIPT_SUCCESS are present
                         # if so, this task is done, so continue
                         # if not, then this is the one being executed
-                        job_states = [row['state'] where row in job_states_res]
+                        job_states = [row['state'] for row in job_states_res]
                         if 'JOB_SUCCESS' in job_states:
                             continue
                         else:
