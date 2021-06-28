@@ -121,7 +121,7 @@ class GeoEDFWorkflow:
             # initialize workflow monitoring
             self.workflow_monitor = WorkflowMonitor()
             # start monitoring this new workflow
-            self.workflow_monitor.start_monitor(self.geoedf_wf.name)
+            self.workflow_monitor.start_monitor(self.geoedf_wf.name,self.builder.run_dir)
             print("Workflow execution can be monitored using the workflow name %s and the monitor() method" % self.geoedf_wf.name)
 
     # monitor workflow execution

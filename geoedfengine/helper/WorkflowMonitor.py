@@ -23,6 +23,7 @@ class WorkflowMonitor:
 
         # initialize key variables
         self.geoedf_cursor = None
+        self.geoedf_con = None
         self.pegasus_cursor = None
         self.tool_shortname = None
         
@@ -31,6 +32,8 @@ class WorkflowMonitor:
             geoedf_dbfile = '%s/geoedf(DO_NOT_DELETE).db' % os.getenv('HOME')
             try:
                 con = sqlite3.connect(geoedf_dbfile)
+                con.row_factory = sqlite3.Row
+                self.geoedf_con = con
                 self.geoedf_cursor = con.cursor()
                 self.geoedf_cursor.execute('''CREATE TABLE if not exists geoedf_workflow(wfid INTEGER PRIMARY KEY AUTOINCREMENT, workflow_name TEXT NOT NULL, workflow_rundir TEXT NOT NULL, tool_shortname TEXT NOT NULL, UNIQUE(workflow_name))''')
             except:
@@ -40,6 +43,7 @@ class WorkflowMonitor:
             pegasus_dbfile = '%s/.pegasus/workflow.db' % os.getenv('HOME')
             try:
                 con = sqlite3.connect(pegasus_dbfile)
+                con.row_factory = sqlite3.Row
                 self.pegasus_cursor = con.cursor()
             except:
                 raise GeoEDFError("Error initializing Pegasus master workflow database")
@@ -59,7 +63,8 @@ class WorkflowMonitor:
     # essentially insert record into GeoEDF workflow table
     def start_monitor(self,workflow_name,workflow_rundir):
         if self.geoedf_cursor is not None:
-            self.geoedf_cursor.execute("INSERT OR IGNORE INTO geoedf_workflow(workflow_name, workflow_rundir, tool_shortname) VALUES(%s,%s,%s)" % (workflow_name,workflow_rundir,self.tool_shortname))
+            self.geoedf_cursor.execute("INSERT OR IGNORE INTO geoedf_workflow(workflow_name, workflow_rundir, tool_shortname) VALUES('%s','%s','%s')" % (workflow_name,workflow_rundir,self.tool_shortname))
+            self.geoedf_con.commit()
         else:
             raise GeoEDFError("Cannot execute commands against GeoEDF workflow database!!!")
 
@@ -92,6 +97,7 @@ class WorkflowMonitor:
 
         try:
             con = sqlite3.connect(workflow_dbfile)
+            con.row_factory = sqlite3.Row
             workflow_cursor = con.cursor()
 
             task_querystr = "SELECT transformation,argv,job_id from task where transformation like 'build_%_plugin_subdax' or transformation like 'run%plugin%';"
@@ -120,7 +126,7 @@ class WorkflowMonitor:
                         stage_data = task_stage.split(':')
                         stage_num = stage_data[0]
                         if len(stage_data) > 2: #filter
-                            filter_val = stage_data[2]
+                            filter_var = stage_data[2]
                             current_task = 'Building stage %s Filter plugin for variable %s' % (stage_num,filter_var)
                         else: #input
                             current_task = 'Building stage %s Input plugin' % stage_num
@@ -140,7 +146,7 @@ class WorkflowMonitor:
 
                     job_states_res = self.query(workflow_cursor,job_state_querystr)
 
-                    if len(job_states) > 0:
+                    if len(job_states_res) > 0:
                         # check to see if JOB_SUCCESS and POST_SCRIPT_SUCCESS are present
                         # if so, this task is done, so continue
                         # if not, then this is the one being executed
@@ -149,6 +155,10 @@ class WorkflowMonitor:
                             continue
                         else:
                             return current_task
+                    else:
+                        return current_task
+                else:
+                    return current_task
         except:
             raise GeoEDFError("Exception occurred when trying to determine current workflow task!!!")
 
@@ -157,21 +167,36 @@ class WorkflowMonitor:
     # are retrieved
     def monitor_status(self,workflow_name=None):
         status_res = {}
+        rundirs = {}
         if workflow_name is None:
             # query for all workflow names for this tool_shortname
             # if unknown, query all workflows
             if self.tool_shortname is None:
-                get_wf_names_query_str = "SELECT workflow_name from geoedf_workflow;"
+                get_wf_names_query_str = "SELECT workflow_name,workflow_rundir from geoedf_workflow;"
             else:
-                get_wf_names_query_str = "SELECT workflow_name from geoedf_workflow WHERE tool_shortname = '%s';" % self.tool_shortname
-            res = self.query(self.geoedf_cursor,get_wf_names_query_str)
+                get_wf_names_query_str = "SELECT workflow_name,workflow_rundir from geoedf_workflow WHERE tool_shortname = '%s';" % self.tool_shortname
+        else: #workflow name has been provided; still need to query for rundir
+            if self.tool_shortname is None:
+                get_wf_names_query_str = "SELECT workflow_name,workflow_rundir from geoedf_workflow WHERE workflow_name = '%s';" % workflow_name
+            else:
+                get_wf_names_query_str = "SELECT workflow_name,workflow_rundir from geoedf_workflow WHERE tool_shortname = '%s' AND workflow_name = '%s';" % (self.tool_shortname,workflow_name)
+
+        res = self.query(self.geoedf_cursor,get_wf_names_query_str)
             
-            workflow_names = [row['workflow_name'] for row in res]
-        else:
-            workflow_names = [workflow_name]
+        workflow_names = ['%s' % row['workflow_name'] for row in res]
+
+        for row in res:
+            rundirs[row['workflow_name']] = row['workflow_rundir']
 
         # for each workflow, query the Pegasus master_workflow table to fetch db_url
-        get_wf_db_url_query_str = "SELECT dax_label,db_url FROM master_workflow WHERE dax_label in %s;" % tuple(workflow_names)
+        # query string is different based on the number of workflow names
+        if len(workflow_names) == 0:
+            print("No workflows found")
+            return status_res
+        elif len(workflow_names) == 1:
+            get_wf_db_url_query_str = "SELECT dax_label,db_url FROM master_workflow WHERE dax_label in ('%s');" % workflow_names[0]
+        else:
+            get_wf_db_url_query_str = "SELECT dax_label,db_url FROM master_workflow WHERE dax_label in %s;" % (tuple(workflow_names),)
         res = self.query(self.pegasus_cursor,get_wf_db_url_query_str)
 
         for row in res:
@@ -180,7 +205,7 @@ class WorkflowMonitor:
             # in workflow_dir
             # db_url is of the form: sqlite:///<path>
             dbpath = row['db_url'][10:]
-            rundir = row['workflow_rundir']
+            rundir = rundirs[row['dax_label']]
             if not os.path.isfile(dbpath):
                 # check to see if file can be found in top level workflow dir
                 dbpath = '%s/workflow.db' % rundir
