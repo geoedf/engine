@@ -26,7 +26,7 @@ class WorkflowMonitor:
         self.geoedf_con = None
         self.pegasus_cursor = None
         self.tool_shortname = None
-        
+
         if os.getenv('HOME') is not None:
             # geoedf workflow DB file path
             geoedf_dbfile = '%s/geoedf(DO_NOT_DELETE).db' % os.getenv('HOME')
@@ -79,11 +79,11 @@ class WorkflowMonitor:
             raise GeoEDFError("Error occurred executing query %s" % query_str)
 
 
-    # method to check status of workflow tasks and return task being executed currently
+    # method to check status of workflow tasks and group them into buckets
+    # of complete, executing, and pending tasks
     # determines the build- and run- tasks for each plugin and then queries
     # the status of their corresponding Pegasus jobs
     # needs workflow DB file for this specific workflow
-    # assumes only one active task exists; i.e. will return first task that has started and is still executing
     
     #1 Filter:dtstring
     #2 HDFEOSShapefileMask
@@ -93,7 +93,12 @@ class WorkflowMonitor:
     #1:Filter:filename Filter
     #1:Input Input
     #2 Processor
-    def current_workflow_task(self,workflow_dbfile):
+    def get_workflow_tasks_status(self,workflow_dbfile):
+
+        complete_tasks = []
+        pending_tasks = []
+        executing_tasks = []
+        workflow_complete = False
 
         try:
             con = sqlite3.connect(workflow_dbfile)
@@ -104,6 +109,8 @@ class WorkflowMonitor:
 
             task_jobs = self.query(workflow_cursor,task_querystr)
 
+            num_tasks = len(task_jobs)
+
             # for each task job, get the job instance ID, then query its states
             for task_job in task_jobs:
                 task_jobid = task_job['job_id']
@@ -113,25 +120,12 @@ class WorkflowMonitor:
                 task_plugin = task_data[2]
 
                 if task_transformation.startswith('build'):
-                    if ':' in task_plugin: #filter
-                        plugin_data = task_plugin.split(':')
-                        current_task = 'Building stage %s Filter plugin for variable %s' % (task_stage,plugin_data[1])
-                    else:
-                        if task_plugin == 'Input':
-                            current_task = 'Building stage %s Input plugin' % task_stage
-                        else:
-                            current_task = 'Building stage %s Processor plugin' % task_stage
-                else:
+                    task_id = '%s:%s' % (task_stage,task_plugin)
+                else: #running tasks
                     if ':' in task_stage:
-                        stage_data = task_stage.split(':')
-                        stage_num = stage_data[0]
-                        if len(stage_data) > 2: #filter
-                            filter_var = stage_data[2]
-                            current_task = 'Building stage %s Filter plugin for variable %s' % (stage_num,filter_var)
-                        else: #input
-                            current_task = 'Building stage %s Input plugin' % stage_num
+                        task_id = task_stage
                     else:
-                        current_task = 'Building stage %s Processor plugin' % task_stage
+                        task_id = '%s:%s' % (task_stage,task_plugin)
 
                 job_instid_querystr = "SELECT job_instance_id from job_instance where job_id = %d;" % int(task_jobid)
 
@@ -152,15 +146,68 @@ class WorkflowMonitor:
                         # if not, then this is the one being executed
                         job_states = [row['state'] for row in job_states_res]
                         if 'JOB_SUCCESS' in job_states:
-                            continue
+                            complete_tasks.append(task_id)
                         else:
-                            return current_task
+                            #this task is still being worked on
+                            executing_tasks.append(task_id)
                     else:
-                        return current_task
+                        pending_tasks.append(task_id)
                 else:
-                    return current_task
+                    pending_tasks.append(task_id)
+
+                if num_tasks == len(complete_tasks):
+                    workflow_complete = True
+
+            return (complete_tasks,executing_tasks,pending_tasks,workflow_complete)
+
         except:
             raise GeoEDFError("Exception occurred when trying to determine current workflow task!!!")
+
+    # find earliest task from an array using stage number and type
+    # only called if > 0 tasks present
+    def identify_earliest_task(self,tasks):
+        earliest_task = tasks[0]
+        for i in range(1,len(tasks)):
+            curr_task = tasks[i]
+            earliest_task_stage = int(earliest_task.split(':')[0])
+            curr_task_stage = int(curr_task.split(':')[0])
+            if curr_task_stage < earliest_task_stage:
+                earliest_task = curr_task
+            elif curr_task_stage > earliest_task_stage:
+                continue
+            else: #same stage; has to be a connector; filter comes before input
+                earliest_plugin = earliest_task.split(':')[1]
+                curr_plugin = curr_task.split(':')[1]
+                if earliest_plugin == 'Input' and curr_plugin == 'Filter':
+                    earliest_task = curr_task
+
+        # make earliest_task more human readable
+        task_data = earliest_task.split(':')
+        task_stage = task_data[0]
+        task_plugin_type = task_data[1]
+
+        if task_plugin_type == 'Input' or task_plugin_type == 'Filter':
+            if len(task_data) > 2:
+                filter_var = task_data[2]
+                return "Stage %s Filter plugin for variable %s" % (task_stage,filter_var)
+            else:
+                return "Stage %s Input plugin" % task_stage
+        else: #processor plugin
+            return "Stage %s Processor plugin" % task_stage
+
+    # based on the various task arrays, figure out most current task
+    def get_current_task(self,executing_tasks,pending_tasks):
+        if len(executing_tasks) == 0 and len(pending_tasks) == 0:
+            # unable to figure out what the current task is
+            return None
+        else:
+            if len(executing_tasks) == 0:
+                # there are only pending tasks that haven't begun execution
+                earliest_task = self.identify_earliest_task(pending_tasks)
+                return "Waiting to execute %s" % earliest_task
+            else:
+                earliest_task = self.identify_earliest_task(executing_tasks)
+                return "Currently executing %s" % earliest_task
 
     # method to monitor a workflow's progress
     # workflow name is optional; when Null all workflows matching tool_shortname
@@ -205,16 +252,29 @@ class WorkflowMonitor:
             # in workflow_dir
             # db_url is of the form: sqlite:///<path>
             dbpath = row['db_url'][10:]
+            workflow_dbfname = os.path.split(dbpath)[1]
             rundir = rundirs[row['dax_label']]
             if not os.path.isfile(dbpath):
                 # check to see if file can be found in top level workflow dir
-                dbpath = '%s/workflow.db' % rundir
+                dbpath = '%s/%s' % (rundir,workflow_dbfname)
                 if not os.path.isfile(dbpath):
-                    print("Workflow %s status cannot be determined; workflow tracking database is missing!!!")
+                    print("Workflow %s status cannot be determined; workflow tracking database is missing!!!" % row['dax_label'])
                     continue
+                else:
+                    status_res[row['dax_label']] = 'Workflow complete, check for results in %s' % rundir
+            else:
+                # query for task status in the workflow_db file
+                (complete_tasks, executing_tasks, pending_tasks, workflow_complete) = self.get_workflow_tasks_status(dbpath)
 
-            # query for task status in the workflow_db file
-            curr_task = self.current_workflow_task(dbpath)
-            status_res[row['dax_label']] = curr_task
+                # if workflow is complete
+                if workflow_complete:
+                    status_res[row['dax_label']] = 'Workflow complete; check for results in %s' % rundir
+                else:
+                    # identify most current task for this workflow
+                    curr_task = self.get_current_task(executing_tasks,pending_tasks)
+                    if curr_task is not None:
+                        status_res[row['dax_label']] = curr_task
+                    else:
+                        status_res[row['dax_label']] = 'Unable to determine current task, try again'
 
         return status_res
