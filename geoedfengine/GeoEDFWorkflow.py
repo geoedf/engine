@@ -37,14 +37,11 @@ class GeoEDFWorkflow:
         # validation (0) make sure workflow file has been provided
         # if not, check if workflow_name is provided, in this case we simply monitor
         if def_filename is None:
-            if workflow_name is None:
-                raise GeoEDFError('Error: a workflow YAML file or a submitted workflow name must be provided!')
-            else:
-                self.workflow_name = workflow_name
-                self.mode = 'monitor'
-                self.target = None
-                # short circuit
-                return
+            self.workflow_name = workflow_name
+            self.mode = 'monitor'
+            self.target = None
+            # short circuit
+            return
 
         # fetch the config
         self.geoedf_cfg = GeoEDFConfig()
