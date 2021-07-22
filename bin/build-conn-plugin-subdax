@@ -98,6 +98,7 @@ else:
 
 # if local file args exist, add input files to DAX
 local_dax_files = []
+other_local_dax_files = []
 if local_file_args_exist:
     for local_file in local_files_needed:
         local_file_fname = os.path.split(local_file)[1]
@@ -258,7 +259,7 @@ with open(workflow_filename,'r') as workflow_file:
                 plugin_job.add_args(encrypted_arg_binds_str)
                 plugin_job.add_args(local_file_args_str)
 
-               for local_dax_file in local_dax_files:
+                for local_dax_file in local_dax_files:
                     plugin_job.add_args(local_dax_file)
                     plugin_job.add_inputs(local_dax_file)
                     
