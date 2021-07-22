@@ -102,9 +102,25 @@ if local_file_args_exist:
     for local_file in local_files_needed:
         local_file_fname = os.path.split(local_file)[1]
         local_dax_file = File(local_file_fname)
-        rc.add_replica("local",local_file_fname,local_file)
-        local_dax_file.addPFN(PFN("file://%s" % local_file,"local"))
+        rc.add_replica("local",local_file_fname, local_file)
         local_dax_files.append(local_dax_file)
+        # special handling for shapefiles; also add other related files (dbf,shx,prj, etc.)
+        # check if shapefile
+        local_file_ext = os.path.splitext(local_file_fname)[1]
+        if local_file_ext == '.shp':
+            # find all other files with same basename
+            basename = os.path.splitext(local_file_fname)[0]
+            # assumes fully qualified path provided
+            local_file_dir = os.path.split(local_file)[0]
+            for local_dir_file in os.listdir(local_file_dir):
+                full_path = '%s/%s' % (local_file_dir,local_dir_file)
+                if os.path.isfile(full_path):
+                    local_dir_file_ext = os.path.splitext(local_dir_file)[1]
+                    if local_dir_file.startswith(basename) and local_dir_file_ext != '.shp':
+                        # add these also to DAX as inputs
+                        other_local_dax_file = File(local_dir_file)
+                        rc.add_replica("local", local_dir_file, full_path)
+                        other_local_dax_files.append(other_local_dax_file)
 
 # process sensitive arg bindings if any, encrypting them with the public key
 # create a new JSON dictionary with arg to encrypted value pairs
@@ -242,9 +258,13 @@ with open(workflow_filename,'r') as workflow_file:
                 plugin_job.add_args(encrypted_arg_binds_str)
                 plugin_job.add_args(local_file_args_str)
 
-                for local_dax_file in local_dax_files:
+               for local_dax_file in local_dax_files:
                     plugin_job.add_args(local_dax_file)
+                    plugin_job.add_inputs(local_dax_file)
                     
+                for other_local_dax_file in other_local_dax_files:
+                    plugin_job.add_inputs(other_local_dax_file)                    
+
                 conn_plugin_wf.add_jobs(plugin_job)
                 plugin_jobs.append(plugin_job)
 
@@ -309,6 +329,10 @@ with open(workflow_filename,'r') as workflow_file:
 
                 for local_dax_file in local_dax_files:
                     plugin_job.add_args(local_dax_file)
+                    plugin_job.add_inputs(local_dax_file)
+                    
+                for other_local_dax_file in other_local_dax_files:
+                    plugin_job.add_inputs(other_local_dax_file)                    
                     
                 conn_plugin_wf.add_jobs(plugin_job)
                 plugin_jobs.append(plugin_job)
@@ -363,6 +387,10 @@ with open(workflow_filename,'r') as workflow_file:
 
             for local_dax_file in local_dax_files:
                 plugin_job.add_args(local_dax_file)
+                plugin_job.add_inputs(local_dax_file)
+                    
+            for other_local_dax_file in other_local_dax_files:
+                plugin_job.add_inputs(other_local_dax_file)                    
                     
             conn_plugin_wf.add_jobs(plugin_job)
             plugin_jobs.append(plugin_job)
