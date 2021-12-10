@@ -18,7 +18,9 @@ class SubmitBroker:
 
         # assume TC and workflow YML files are in the workflow_dir
         try:
-            subprocess.run(["submit","--detach","-i","transformations.yml","pegasus-plan-geoedf","--dax","workflow.yml"],cwd=workflow_dir)
+            workflow_path = '%s/workflow.yml' % workflow_dir
+            env_set = 'GEOEDF_WORKFLOW=',workflow_path
+            subprocess.run(["submit","--detach","-i","transformations.yml","-e",env_set,"pegasus-plan-geoedf","--dax","workflow.yml"],cwd=workflow_dir)
         except e:
             raise e
 
