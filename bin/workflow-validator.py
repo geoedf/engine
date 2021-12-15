@@ -95,23 +95,25 @@ def validate_transformations(transformation_filepath):
         raise Exception('Could not validate transformations catalog file')
 
 # main code begins
-# first retrieve workflow path from env var
-workflow_filepath = os.getenv('GEOEDF_WORKFLOW')
+# first retrieve workflow path from command args
+if len(sys.argv) > 1:
+    workflow_filepath = sys.argv[1]
 
-# if env var not set, raise error
-if workflow_filepath is not None:
-    dir,workflow_fname = os.path.split(workflow_filepath)
+    # ensure this is a valid filepath
+    if os.path.isfile(workflow_filepath):
+        dir,workflow_fname = os.path.split(workflow_filepath)
 
-    # construct path to transformations catalog in same directory
-    transformation_filepath = '%s/transformations.yml' % dir
+        # construct path to transformations catalog in same directory
+        transformation_filepath = '%s/transformations.yml' % dir
 
-    # first validate workflow
-    validate_workflow(workflow_filepath)
+        # first validate workflow
+        validate_workflow(workflow_filepath)
 
-    # validate transformations file
-    validate_transformations(transformation_filepath)
+        # validate transformations file
+        validate_transformations(transformation_filepath)
 
-    exit(1)
-
+        exit(1)
+    else:
+        raise Exception('Invalid workflow file argument provided to workflow-validator script')
 else:
-    raise Exception('Could not find workflow filepath in environment; cannot validate')
+    raise Exception('Workflow file path not provided to workflow-validator script')
