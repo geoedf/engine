@@ -1,6 +1,7 @@
 import yaml
-from yaml import FullLoader
+from yaml import CSafeLoader
 import os
+import sys
 
 #list of valid executable names
 valid_exec_names = ['mkdir','gen_keypair','build_conn_plugin_subdax','build_proc_plugin_subdax','build_final_subdax']
@@ -17,7 +18,7 @@ def validate_workflow(workflow_filepath):
     # read workflow YAML file
     try:
         with open(workflow_filepath,'r') as workflow_file:
-            workflow_dict = yaml.load(workflow_file,Loader=FullLoader)
+            workflow_dict = yaml.load(workflow_file,Loader=CSafeLoader)
 
             # next loop through the jobs in the dictionary
             # process "job" separately from "pegasusworkflow" type
@@ -65,7 +66,7 @@ def validate_transformations(transformation_filepath):
     # read transformations catalog file
     try:
         with open(transformation_filepath,'r') as transforms_file:
-            transforms_dict = yaml.load(transforms_file,Loader=FullLoader)
+            transforms_dict = yaml.load(transforms_file,Loader=CSafeLoader)
 
             #first check container to make sure they are not local files
             for exec_container in transforms_dict['containers']:
@@ -112,7 +113,7 @@ if len(sys.argv) > 1:
         # validate transformations file
         validate_transformations(transformation_filepath)
 
-        exit(1)
+        sys.exit(0)
     else:
         raise Exception('Invalid workflow file argument provided to workflow-validator script')
 else:
