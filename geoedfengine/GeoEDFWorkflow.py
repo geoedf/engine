@@ -28,14 +28,14 @@ class GeoEDFWorkflow:
 
     # workflow_filepath is a YAML file that encodes the workflow and is required
     # workflow_name is the name of the workflow
-    # execution mode is dev or prod
+    # execution mode is standalone or prod
     # execution target is the HPC server where workflow is executed
     # tool_shortname is HUBzero specific, a means of filtering workflows
     # run from various HUBzero tools
     # if workflow_name is also provided, the user intends to override
     # the automatic name assigned to the workflow with the provided one
     # validation has already been performed by the WorkflowEngine
-    def __init__(self,workflow_filepath,workflow_name=None,exec_mode='dev',exec_target='local',tool_shortname='geoedf'):
+    def __init__(self,workflow_filepath,workflow_name=None,exec_mode='standalone',exec_target='local',tool_shortname='geoedf'):
 
         db_helper = WorkflowDBHelper()
 

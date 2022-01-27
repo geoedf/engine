@@ -131,7 +131,7 @@ if sensitive_arg_binds_str != 'None':
                     label=None))
 
             # use base64 encoding to enable this to be transmitted via JSON
-            b64encoded_val = base64.encodestring(encrypted_val)
+            b64encoded_val = base64.encodebytes(encrypted_val)
             encrypted_arg_binds[arg] = b64encoded_val.decode('ascii')
             
     encrypted_arg_binds_str = json.dumps(json.dumps(encrypted_arg_binds))

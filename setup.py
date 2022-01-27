@@ -5,7 +5,7 @@ def readme():
         return f.read()
 
 setup(name='geoedfengine',
-      version='1.6',
+      version='1.7',
       description='GeoEDF Plug-and-play Workflow Engine',
       url='http://github.com/geoedf/engine',
       author='Rajesh Kalyanam',

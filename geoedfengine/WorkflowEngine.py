@@ -30,7 +30,7 @@ geoedf_cfg = GeoEDFConfig()
 # validation (1) if config was not set up, assume this is in submit mode
 # submit mode is used only for constructing sub-workflows on the submit node
 if geoedf_cfg.config is not None:
-    # figure out whether prod or dev mode
+    # figure out whether prod or standalone mode
     mode = geoedf_cfg.config['GENERAL']['mode']
 
     # figure out workflow execution target
@@ -84,24 +84,12 @@ class WorkflowEngine:
                 workflow = GeoEDFWorkflow(workflow_file,workflow_name,mode,target,WorkflowEngine.get_tool_shortname())
                 print("Workflow %s created" % workflow.workflow_name)
                 
-                # in dev mode, we execute; otherwise just write out the workflow so we can use submit
-                if mode == 'dev':
-                    # set the replica catalog for this workflow
-                    workflow.geoedf_wf.add_replica_catalog(workflow.builder.rc)
-                    # prepare for outputs
-                    output_dir = '%s/output' % workflow.workflow_rundir
-
-                    # inform user
-                    print("On successful completion, outputs will be placed at: %s" % output_dir)
-        
-                    # plan and execute workflow
-                    workflow.geoedf_wf.plan(dir=workflow.workflow_rundir,output_dir=output_dir,submit=True).wait()
-                # prod mode
-                else:
-                    workflow.geoedf_wf.write('%s/workflow.yml' % workflow.workflow_rundir)
-                    helper.execute_workflow(workflow.workflow_rundir,broker)
-                    print("Workflow submitted for execution; outputs will be written to %s" % workflow.workflow_rundir)
-                    print("Workflow execution can be monitored by passing the workflow name: %s to the monitor() method" % workflow.workflow_name)
+                # write out the workflow so we can submit using the broker
+                # supported brokers are: HUBzero submit and pegasus
+                workflow.geoedf_wf.write('%s/workflow.yml' % workflow.workflow_rundir)
+                helper.execute_workflow(workflow.workflow_rundir,broker)
+                print("Workflow submitted for execution; outputs will be written to %s" % workflow.workflow_rundir)
+                print("Workflow execution can be monitored by passing the workflow name: %s to the workflow_status() method" % workflow.workflow_name)
             else:
                 raise GeoEDFError('A valid workflow file path needs to be provided for execution!')
         else:

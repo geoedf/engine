@@ -15,6 +15,7 @@ import time
 from getpass import getpass
 from ..GeoEDFConfig import GeoEDFConfig
 from .SubmitBroker import SubmitBroker
+from .PegasusBroker import PegasusBroker
 
 geoedf_cfg = GeoEDFConfig()
 if geoedf_cfg.config is not None:
@@ -359,6 +360,9 @@ class WorkflowUtils:
         if broker == 'submit':
             submitBroker = SubmitBroker()
             submitBroker.plan_and_submit(workflow_dir)
+        elif broker == 'pegasus':
+            pegasusBroker = PegasusBroker()
+            pegasusBroker.plan_and_submit(workflow_dir)
 
     # function to monitor a workflow's status via the broker
     def monitor_workflow(self,workflow_dir,broker):

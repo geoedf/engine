@@ -30,7 +30,7 @@ class WorkflowBuilder:
     # pass along anything that may be needed; for now, just the target execution environment
     # creates local workflow directory to hold subworkflow DAX YAMLs
     # and merge result outputs
-    # mode is between prod and dev; in dev mode, local containers are allowed in dev mode
+    # mode is between prod and standalone; in standalone mode, local containers are allowed
 
     def __init__(self,workflow_filename,mode='prod',target='condorpool'):
         with open(workflow_filename,'r') as workflow_file:
@@ -194,17 +194,18 @@ class WorkflowBuilder:
         # add connector and processor plugin containers to DAX-level TC
         # add the corresponding executable for each plguin
 
-        # in dev mode first add all local Singularity containers
+        # in standalone mode first add all local Singularity containers
         # a local container overrides the same plugin found in the registry
         # this is useful when testing changes to a pre-existing plugin
 
         local_images = []
 
-        if self.mode == 'dev':
-            # find all images in /images
-            for file in os.listdir("/images"):
+        if self.mode == 'standalone':
+            # find all images in $HOME/images
+            image_path = '%s/images' % os.getenv("HOME")
+            for file in os.listdir(image_path):
                 if file.endswith(".sif"):
-                    image_path = os.path.join("/images",file)
+                    image_path = os.path.join(image_path,file)
                     # figure out if connector or processor
                     plugin_name = os.path.splitext(file)[0]
                     # add to array that is used to identify which images to skip from registry
