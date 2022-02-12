@@ -41,8 +41,9 @@ class WorkflowDBHelper:
                 con.row_factory = sqlite3.Row
                 self.pegasus_cursor = con.cursor()
             except:
-                raise GeoEDFError("Error initializing Pegasus master workflow database")
-
+                # no Pegasus DB file exists, user may have not yet submitted any workflows
+                # we will check again later
+                self.pegasus_cursor = None
         else:
             raise GeoEDFError("Home directory not found; cannot find or initialize GeoEDF workflow database")
 
@@ -248,6 +249,18 @@ class WorkflowDBHelper:
             get_wf_db_url_query_str = "SELECT dax_label,db_url FROM master_workflow WHERE dax_label in ('%s');" % pegasus_workflows[workflow_names[0]]
         else:
             get_wf_db_url_query_str = "SELECT dax_label,db_url FROM master_workflow WHERE dax_label in %s;" % (tuple([pegasus_workflows[workflow_name] for workflow_name in workflow_names]),)
+
+        # try to construct Pegasus DB cursor if it wasn't available before
+        if self.pegasus_cursor is None:
+            pegasus_dbfile = '%s/.pegasus/workflow.db' % os.getenv('HOME')
+            try:
+                con = sqlite3.connect(pegasus_dbfile)
+                con.row_factory = sqlite3.Row
+                self.pegasus_cursor = con.cursor()
+            except:
+                print("Workflow status could not be determined since workflow database has not yet been created. Try again in a little while")
+                return []
+            
         res = self.query(self.pegasus_cursor,get_wf_db_url_query_str)
 
         for row in res:
