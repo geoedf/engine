@@ -41,9 +41,9 @@ class WorkflowDBHelper:
                 con.row_factory = sqlite3.Row
                 self.pegasus_cursor = con.cursor()
             except:
-                # no Pegasus DB file exists, user may have not yet submitted any workflows
-                # we will check again later
                 self.pegasus_cursor = None
+                #raise GeoEDFError("Error initializing Pegasus master workflow database")
+
         else:
             raise GeoEDFError("Home directory not found; cannot find or initialize GeoEDF workflow database")
 
@@ -98,6 +98,7 @@ class WorkflowDBHelper:
         complete_tasks = []
         pending_tasks = []
         executing_tasks = []
+        failed_tasks = []
         workflow_complete = False
 
         try:
@@ -146,7 +147,12 @@ class WorkflowDBHelper:
                         # if not, then this is the one being executed
                         job_states = [row['state'] for row in job_states_res]
                         if 'JOB_SUCCESS' in job_states:
-                            complete_tasks.append(task_id)
+                            if 'POST_SCRIPT_FAILED' in job_states:
+                                failed_tasks.append(task_id)
+                            elif 'POST_SCRIPT_SUCCESS' in job_states:
+                                complete_tasks.append(task_id)
+                            else:
+                                executing_tasks.append(task_id)
                         else:
                             #this task is still being worked on
                             executing_tasks.append(task_id)
@@ -155,14 +161,29 @@ class WorkflowDBHelper:
                 else:
                     pending_tasks.append(task_id)
 
-                if num_tasks == len(complete_tasks):
+                if num_tasks == len(complete_tasks) and len(failed_tasks) == 0:
                     workflow_complete = True
 
-            return (complete_tasks,executing_tasks,pending_tasks,workflow_complete)
+            return (failed_tasks,complete_tasks,executing_tasks,pending_tasks,workflow_complete)
 
         except:
             raise GeoEDFError("Exception occurred when trying to determine current workflow task!!!")
 
+    # make a human readable task name
+    def human_readable_taskname(self,task):
+        task_data = task.split(':')
+        task_stage = task_data[0]
+        task_plugin_type = task_data[1]
+
+        if task_plugin_type == 'Input' or task_plugin_type == 'Filter':
+            if len(task_data) > 2:
+                filter_var = task_data[2]
+                return "Stage %s Filter plugin for variable %s" % (task_stage,filter_var)
+            else:
+                return "Stage %s Input plugin" % task_stage
+        else: #processor plugin
+            return "Stage %s Processor plugin" % task_stage
+        
     # find earliest task from an array using stage number and type
     # only called if > 0 tasks present
     def identify_earliest_task(self,tasks):
@@ -180,20 +201,7 @@ class WorkflowDBHelper:
                 curr_plugin = curr_task.split(':')[1]
                 if earliest_plugin == 'Input' and curr_plugin == 'Filter':
                     earliest_task = curr_task
-
-        # make earliest_task more human readable
-        task_data = earliest_task.split(':')
-        task_stage = task_data[0]
-        task_plugin_type = task_data[1]
-
-        if task_plugin_type == 'Input' or task_plugin_type == 'Filter':
-            if len(task_data) > 2:
-                filter_var = task_data[2]
-                return "Stage %s Filter plugin for variable %s" % (task_stage,filter_var)
-            else:
-                return "Stage %s Input plugin" % task_stage
-        else: #processor plugin
-            return "Stage %s Processor plugin" % task_stage
+        return self.human_readable_taskname(earliest_task)
 
     # based on the various task arrays, figure out most current task
     def get_current_task(self,executing_tasks,pending_tasks):
@@ -250,7 +258,6 @@ class WorkflowDBHelper:
         else:
             get_wf_db_url_query_str = "SELECT dax_label,db_url FROM master_workflow WHERE dax_label in %s;" % (tuple([pegasus_workflows[workflow_name] for workflow_name in workflow_names]),)
 
-        # try to construct Pegasus DB cursor if it wasn't available before
         if self.pegasus_cursor is None:
             pegasus_dbfile = '%s/.pegasus/workflow.db' % os.getenv('HOME')
             try:
@@ -258,8 +265,7 @@ class WorkflowDBHelper:
                 con.row_factory = sqlite3.Row
                 self.pegasus_cursor = con.cursor()
             except:
-                print("Workflow status could not be determined since workflow database has not yet been created. Try again in a little while")
-                return []
+                raise GeoEDFError('Still could not construct pegasus DB cursor')
             
         res = self.query(self.pegasus_cursor,get_wf_db_url_query_str)
 
@@ -285,7 +291,7 @@ class WorkflowDBHelper:
                     status_res.append(res_data)
             else:
                 # query for task status in the workflow_db file
-                (complete_tasks, executing_tasks, pending_tasks, workflow_complete) = self.get_workflow_tasks_status(dbpath)
+                (failed_tasks, complete_tasks, executing_tasks, pending_tasks, workflow_complete) = self.get_workflow_tasks_status(dbpath)
 
                 # if workflow is complete
                 if workflow_complete:
@@ -293,6 +299,15 @@ class WorkflowDBHelper:
                     res_data['workflow_id'] = dax_workflownames[row['dax_label']]
                     res_data['workflow_dir'] = rundir
                     res_data['workflow_status'] = 'Workflow complete'
+                    status_res.append(res_data)
+                # if there is a failed task, report it
+                elif len(failed_tasks) > 0:
+                    # report the first failed task
+                    readable_taskname = self.human_readable_taskname(failed_tasks[0])
+                    res_data = {}
+                    res_data['workflow_id'] = dax_workflownames[row['dax_label']]
+                    res_data['workflow_dir'] = rundir
+                    res_data['workflow_status'] = '%s failed' % readable_taskname
                     status_res.append(res_data)
                 else:
                     # identify most current task for this workflow
