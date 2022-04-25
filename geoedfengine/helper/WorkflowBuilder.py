@@ -30,7 +30,7 @@ class WorkflowBuilder:
     # pass along anything that may be needed; for now, just the target execution environment
     # creates local workflow directory to hold subworkflow DAX YAMLs
     # and merge result outputs
-    # mode is between prod and standalone; in standalone mode, local containers are allowed
+    # mode is between prod,standalone, and dev; in dev mode, local containers are allowed
 
     def __init__(self,workflow_filename,mode='prod',target='condorpool'):
         with open(workflow_filename,'r') as workflow_file:
@@ -194,13 +194,13 @@ class WorkflowBuilder:
         # add connector and processor plugin containers to DAX-level TC
         # add the corresponding executable for each plguin
 
-        # in standalone mode first add all local Singularity containers
+        # in dev mode first add all local Singularity containers
         # a local container overrides the same plugin found in the registry
         # this is useful when testing changes to a pre-existing plugin
 
         local_images = []
 
-        if self.mode == 'standalone':
+        if self.mode == 'dev':
             # find all images in $HOME/images
             image_path = '%s/images' % os.getenv("HOME")
             for file in os.listdir(image_path):
@@ -529,11 +529,12 @@ class WorkflowBuilder:
 
                     # add job executing sub-workflow to DAX
                     subdax_exec_job = SubWorkflow(subdax_file, is_planned=False)
-                    #output_dir = '%s/output' % self.run_dir
+                    output_dir = '%s/output' % self.run_dir
 
                     subdax_exec_job.add_args("-Dpegasus.integrity.checking=none",
                                              "--sites",self.target,
                                              "--output-site","local",
+                                             "--output-dir",output_dir,
                                              "--basename",stage_name,
                                              "--force")
                     subdax_exec_job.add_outputs(stage_res_file,stage_out=False,register_replica=False)
