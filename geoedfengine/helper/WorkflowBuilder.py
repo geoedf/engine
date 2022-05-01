@@ -529,12 +529,11 @@ class WorkflowBuilder:
 
                     # add job executing sub-workflow to DAX
                     subdax_exec_job = SubWorkflow(subdax_file, is_planned=False)
-                    output_dir = '%s/output' % self.run_dir
+                    #output_dir = '%s/output' % self.run_dir
 
                     subdax_exec_job.add_args("-Dpegasus.integrity.checking=none",
                                              "--sites",self.target,
                                              "--output-site","local",
-                                             "--output-dir",output_dir,
                                              "--basename",stage_name,
                                              "--force")
                     subdax_exec_job.add_outputs(stage_res_file,stage_out=False,register_replica=False)
@@ -672,12 +671,20 @@ class WorkflowBuilder:
                                 
             # add job executing sub-workflow to DAX
             subdax_exec_job = SubWorkflow(subdax_filename, is_planned=False)
-            #output_dir = '%s/output' % self.run_dir
+            output_dir = '%s/output' % self.run_dir
 
-            subdax_exec_job.add_args("-Dpegasus.integrity.checking=none",
-                                     "--sites",self.target,
-                                     "--output-site","local",
-                                     "--basename","final")
+            if self.mode == 'standalone':
+                subdax_exec_job.add_args("-Dpegasus.integrity.checking=none",
+                                         "--sites",self.target,
+                                         "--output-site","local",
+                                         "--output-dir",output_dir,
+                                         "--basename","final")
+            else:
+                subdax_exec_job.add_args("-Dpegasus.integrity.checking=none",
+                                         "--sites",self.target,
+                                         "--output-site","local",
+                                         "--basename","final")
+
             self.geoedf_wf.add_jobs(subdax_exec_job)
             # add dependency between job building subdax and job executing it
             self.geoedf_wf.add_dependency(subdax_exec_job,parents=[subdax_build_job])
